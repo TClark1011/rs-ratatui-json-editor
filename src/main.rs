@@ -1,8 +1,8 @@
 use std::{error::Error, io};
 
-use app::{App, CurrentScreen, CurrentlyEditing};
+use app::{Action, App, CurrentScreen, CurrentlyEditing};
 use ratatui::crossterm::event::{
-    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind,
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent,
 };
 use ratatui::crossterm::execute;
 use ratatui::crossterm::terminal::{
@@ -51,84 +51,80 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
     loop {
         terminal.draw(|frame| ui(frame, app))?;
 
-        if let Event::Key(key) = event::read()? {
-            if key.kind == event::KeyEventKind::Release {
-                continue;
-                // we only want to listen to `Press` events
-            }
-
-            match app.current_screen {
-                CurrentScreen::Main => match key.code {
-                    KeyCode::Char('e') => {
-                        app.current_screen = CurrentScreen::Editing;
-                        app.currently_editing = Some(CurrentlyEditing::Key);
-                    }
-                    KeyCode::Char('q') => app.current_screen = CurrentScreen::Exiting,
-                    _ => {}
-                },
-                CurrentScreen::Exiting => match key.code {
-                    KeyCode::Char('y') => {
-                        return Ok(true);
-                    }
-                    KeyCode::Char('n') | KeyCode::Char('q') => {
-                        return Ok(false);
-                    }
-                    _ => {}
-                },
-                CurrentScreen::Editing if key.kind == KeyEventKind::Press => {
-                    match key.code {
-                        KeyCode::Enter => {
-                            // On enter press we cycle through the UI, if
-                            // editing the key we go to edit the value,
-                            // if editing the value we submit the pair
-                            if let Some(editing) = &app.currently_editing {
-                                match editing {
-                                    CurrentlyEditing::Key => {
-                                        app.currently_editing = Some(CurrentlyEditing::Value);
-                                    }
-                                    CurrentlyEditing::Value => {
-                                        app.save_key_value();
-                                        app.current_screen = CurrentScreen::Main
-                                    }
-                                }
-                            }
-                        }
-                        KeyCode::Backspace => {
-                            if let Some(editing) = &app.currently_editing {
-                                match editing {
-                                    CurrentlyEditing::Key => {
-                                        app.key_input.pop();
-                                    }
-                                    CurrentlyEditing::Value => {
-                                        app.value_input.pop();
-                                    }
-                                }
-                            }
-                        }
-                        KeyCode::Esc => {
-                            app.current_screen = CurrentScreen::Main;
-                            app.currently_editing = None;
-                        }
-                        KeyCode::Tab => {
-                            app.toggle_editing();
-                        }
-                        KeyCode::Char(character) => {
-                            if let Some(editing) = &app.currently_editing {
-                                match editing {
-                                    CurrentlyEditing::Key => {
-                                        app.key_input.push(character);
-                                    }
-                                    CurrentlyEditing::Value => {
-                                        app.value_input.push(character);
-                                    }
-                                }
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                _ => {}
-            }
+        if let Event::Key(key_event) = event::read()? {
+            if let Some(should_print) = handle_input(app, key_event) {
+                // App has exited
+                return Ok(should_print);
+            };
         }
     }
+}
+
+fn handle_input(app: &mut App, key_event: KeyEvent) -> Option<bool> {
+    let mut result: Option<bool> = None;
+    if key_event.kind == event::KeyEventKind::Release {
+        return result;
+        // we only want to listen to `Press` events
+    }
+
+    let matching_key_bind_res = app
+        .available_bindings
+        .iter()
+        .find(|(key_code, _)| key_code == &key_event.code);
+
+    if let Some((_, action)) = matching_key_bind_res {
+        match action {
+            Action::Quit => {
+                app.goto_screen(CurrentScreen::Exiting);
+            }
+            Action::OpenNewPairPopup => {
+                app.goto_screen(CurrentScreen::Editing);
+                app.toggle_editing();
+            }
+            Action::EditingCancel => {
+                app.clear_editing_state();
+                app.goto_screen(CurrentScreen::Main);
+            }
+            Action::EditingToggleField => {
+                app.toggle_editing();
+            }
+            Action::EditingSubmit => match app.currently_editing {
+                Some(CurrentlyEditing::Key) => {
+                    app.currently_editing = Some(CurrentlyEditing::Value);
+                }
+                Some(CurrentlyEditing::Value) => {
+                    app.save_key_value();
+                    app.clear_editing_state();
+                    app.goto_screen(CurrentScreen::Main);
+                }
+                None => {}
+            },
+            Action::EditingBackspace => match app.currently_editing {
+                Some(CurrentlyEditing::Key) => {
+                    app.key_input.pop();
+                }
+                Some(CurrentlyEditing::Value) => {
+                    app.value_input.pop();
+                }
+                None => {}
+            },
+            Action::YesPrint => {
+                result = Some(true);
+            }
+            Action::NoPrint => {
+                result = Some(false);
+            }
+        }
+    } else if let CurrentScreen::Editing = app.current_screen {
+        // Special case for typing into the inputs
+        if let KeyCode::Char(character) = key_event.code {
+            match app.currently_editing {
+                Some(CurrentlyEditing::Key) => app.key_input.push(character),
+                Some(CurrentlyEditing::Value) => app.value_input.push(character),
+                None => {}
+            }
+        }
+    };
+
+    result
 }
