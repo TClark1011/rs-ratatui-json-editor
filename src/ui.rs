@@ -123,13 +123,13 @@ pub fn ui(frame: &mut Frame, app: &App) {
             CurrentlyEditing::Value => value_block = value_block.style(active_style),
         }
 
+        frame.render_widget(popup_block, area);
+
         let key_text = Paragraph::new(app.key_input.clone()).block(key_block);
         frame.render_widget(key_text, popup_panels[0]);
 
         let value_text = Paragraph::new(app.value_input.clone()).block(value_block);
         frame.render_widget(value_text, popup_panels[1]);
-
-        frame.render_widget(popup_block, area);
     }
 
     //# Exit Popup
