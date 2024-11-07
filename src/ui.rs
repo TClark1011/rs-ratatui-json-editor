@@ -91,7 +91,11 @@ pub fn ui(frame: &mut Frame, app: &App) {
     //# Existing Pairs List
     for key in app.pairs.keys() {
         list_items.push(ListItem::new(Line::from(Span::styled(
-            format!("{: <25}: {}", key, app.pairs.get(key).unwrap()),
+            format!(
+                "\"{: <25}: \"{}\"",
+                format!("{key}\""),
+                app.pairs.get(key).unwrap()
+            ),
             Style::default().fg(Color::Yellow),
         ))))
     }
