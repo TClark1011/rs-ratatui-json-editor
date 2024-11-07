@@ -1,4 +1,5 @@
 use ratatui::{
+    crossterm::event::KeyCode,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span, Text},
@@ -67,12 +68,20 @@ pub fn ui(frame: &mut Frame, app: &App) {
     let current_keys_hint = Span::styled(
         format!(
             " {}",
-            match app.current_screen {
-                AppScreen::Editing => "(ESC) cancel / (Tab) switch / (Enter) submit",
-                _ => "(q) quit / (e) new pair",
-            }
+            app.available_bindings
+                .iter()
+                .filter_map(|(key_code, action)| {
+                    let key_label = match key_code {
+                        KeyCode::Enter => "Enter",
+                        kc => &format!("{kc}"),
+                    };
+
+                    return Some(format!("({}) {}", key_label, action.description()?));
+                })
+                .collect::<Vec<_>>()
+                .join(" | ")
         ),
-        Style::default().fg(Color::Red),
+        Style::default().fg(Color::Blue),
     );
 
     let key_notes_footer =

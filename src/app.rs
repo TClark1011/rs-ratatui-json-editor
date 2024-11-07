@@ -29,6 +29,9 @@ impl InputAction {
         match self {
             InputAction::OpenNewPairPopup => Some("new pair"),
             InputAction::Quit => Some("quit"),
+            InputAction::EditingCancel => Some("cancel"),
+            InputAction::EditingToggleField => Some("switch"),
+            InputAction::EditingSubmit => Some("submit"),
             _ => None,
         }
     }
