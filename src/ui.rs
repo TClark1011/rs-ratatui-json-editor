@@ -33,11 +33,12 @@ pub fn ui(frame: &mut Frame, app: &App) {
     frame.render_widget(title, vertical_panels[0]); // render title to top panel
 
     //# Footer
-    let (current_screen_navigation_str, current_screen_navigation_fg) = match app.current_screen {
-        AppScreen::Main => ("Normal Mode", Color::Green),
-        AppScreen::Editing => ("Editing Mode", Color::Yellow),
-        AppScreen::Exiting => ("Exiting", Color::LightRed),
-    };
+    let (current_screen_navigation_str, current_screen_navigation_fg) =
+        match app.get_current_screen() {
+            AppScreen::Main => ("Normal Mode", Color::Green),
+            AppScreen::Editing => ("Editing Mode", Color::Yellow),
+            AppScreen::Exiting => ("Exiting", Color::LightRed),
+        };
 
     let current_screen_navigation_text = Span::styled(
         format!(" {current_screen_navigation_str}"),
@@ -146,7 +147,7 @@ pub fn ui(frame: &mut Frame, app: &App) {
     }
 
     //# Exit Popup
-    if let AppScreen::Exiting = app.current_screen {
+    if let AppScreen::Exiting = app.get_current_screen() {
         frame.render_widget(Clear, frame.area()); //this clears the entire screen and anything already drawn
 
         let popup_block = Block::default()

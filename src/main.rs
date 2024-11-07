@@ -115,7 +115,7 @@ fn handle_input(app: &mut App, key_event: KeyEvent) -> Option<bool> {
                 result = Some(false);
             }
         }
-    } else if let AppScreen::Editing = app.current_screen {
+    } else if let AppScreen::Editing = app.get_current_screen() {
         // Special case for typing into the inputs
         if let KeyCode::Char(character) = key_event.code {
             match app.currently_editing {

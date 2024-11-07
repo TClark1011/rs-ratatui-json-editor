@@ -45,7 +45,7 @@ pub struct App {
     pub pairs: HashMap<String, String>,
     pub currently_editing: Option<CurrentlyEditing>,
     pub available_bindings: Vec<KeyBinding>,
-    pub current_screen: AppScreen,
+    current_screen: AppScreen,
 }
 
 impl App {
@@ -62,6 +62,10 @@ impl App {
         result.update_bindings();
 
         result
+    }
+
+    pub fn get_current_screen(&self) -> &AppScreen {
+        &self.current_screen
     }
 
     pub fn goto_screen(&mut self, new_screen: AppScreen) {
