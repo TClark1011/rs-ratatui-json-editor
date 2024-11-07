@@ -74,12 +74,20 @@ fn handle_input(app: &mut App, key_event: KeyEvent) -> Option<bool> {
 
     if let Some((_, action)) = matching_key_bind_res {
         match action {
+            InputAction::ExitYesPrint => {
+                result = Some(true);
+            }
+            InputAction::ExitNoPrint => {
+                result = Some(false);
+            }
+            InputAction::ExitCancel => {
+                app.goto_screen(AppScreen::Main);
+            }
             InputAction::Quit => {
                 app.goto_screen(AppScreen::Exiting);
             }
             InputAction::OpenNewPairPopup => {
                 app.goto_screen(AppScreen::Editing);
-                app.toggle_editing();
             }
             InputAction::EditingCancel => {
                 app.clear_editing_state();
@@ -108,11 +116,22 @@ fn handle_input(app: &mut App, key_event: KeyEvent) -> Option<bool> {
                 }
                 None => {}
             },
-            InputAction::YesPrint => {
-                result = Some(true);
+            InputAction::CursorUp => {
+                app.list_ui_state.select_previous();
             }
-            InputAction::NoPrint => {
-                result = Some(false);
+            InputAction::CursorDown => {
+                app.list_ui_state.select_next();
+            }
+            InputAction::CursorCancel => {
+                app.list_ui_state.select(None);
+            }
+            InputAction::CursorSelect => {
+                if let Some(selected_index) = app.list_ui_state.selected() {
+                    match app.open_item_edit(selected_index) {
+                        Err(_) => result = Some(false),
+                        Ok(_) => {}
+                    }
+                }
             }
         }
     } else if let AppScreen::Editing = app.get_current_screen() {

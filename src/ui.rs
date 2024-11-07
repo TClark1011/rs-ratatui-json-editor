@@ -9,7 +9,7 @@ use ratatui::{
 
 use crate::app::{App, AppScreen, CurrentlyEditing};
 
-pub fn ui(frame: &mut Frame, app: &App) {
+pub fn ui(frame: &mut Frame, app: &mut App) {
     let vertical_panels = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -109,8 +109,11 @@ pub fn ui(frame: &mut Frame, app: &App) {
             Style::default().fg(Color::Yellow),
         ))))
     }
-
-    frame.render_widget(List::new(list_items), vertical_panels[1]);
+    frame.render_stateful_widget(
+        List::new(list_items).highlight_style(Style::default().bg(Color::White).fg(Color::Black)),
+        vertical_panels[1],
+        &mut app.list_ui_state,
+    );
 
     //# Editing Popup
     if let Some(editing) = &app.currently_editing {
