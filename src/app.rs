@@ -2,8 +2,7 @@ use std::collections::HashMap;
 
 use ratatui::crossterm::event::KeyCode;
 
-// TODO: rename this enum
-pub enum CurrentScreen {
+pub enum AppScreen {
     Main,
     Editing,
     Exiting,
@@ -14,7 +13,7 @@ pub enum CurrentlyEditing {
     Value,
 }
 
-pub enum Action {
+pub enum InputAction {
     OpenNewPairPopup,
     Quit,
     YesPrint,
@@ -25,17 +24,17 @@ pub enum Action {
     EditingBackspace,
 }
 
-impl Action {
+impl InputAction {
     pub fn description(&self) -> Option<&str> {
         match self {
-            Action::OpenNewPairPopup => Some("new pair"),
-            Action::Quit => Some("quit"),
+            InputAction::OpenNewPairPopup => Some("new pair"),
+            InputAction::Quit => Some("quit"),
             _ => None,
         }
     }
 }
 
-pub type KeyBinding = (KeyCode, Action);
+pub type KeyBinding = (KeyCode, InputAction);
 
 pub struct App {
     pub key_input: String,
@@ -43,7 +42,7 @@ pub struct App {
     pub pairs: HashMap<String, String>,
     pub currently_editing: Option<CurrentlyEditing>,
     pub available_bindings: Vec<KeyBinding>,
-    pub current_screen: CurrentScreen,
+    pub current_screen: AppScreen,
 }
 
 impl App {
@@ -52,7 +51,7 @@ impl App {
             key_input: String::new(),
             value_input: String::new(),
             pairs: HashMap::new(),
-            current_screen: CurrentScreen::Main,
+            current_screen: AppScreen::Main,
             currently_editing: None,
             available_bindings: Vec::new(),
         };
@@ -62,28 +61,28 @@ impl App {
         result
     }
 
-    pub fn goto_screen(&mut self, new_screen: CurrentScreen) {
+    pub fn goto_screen(&mut self, new_screen: AppScreen) {
         self.current_screen = new_screen;
         self.update_bindings();
     }
 
     fn update_bindings(&mut self) {
         self.available_bindings = match self.current_screen {
-            CurrentScreen::Main => {
+            AppScreen::Main => {
                 vec![
-                    (KeyCode::Char('e'), Action::OpenNewPairPopup),
-                    (KeyCode::Char('q'), Action::Quit),
+                    (KeyCode::Char('e'), InputAction::OpenNewPairPopup),
+                    (KeyCode::Char('q'), InputAction::Quit),
                 ]
             }
-            CurrentScreen::Editing => vec![
-                (KeyCode::Enter, Action::EditingSubmit),
-                (KeyCode::Tab, Action::EditingToggleField),
-                (KeyCode::Esc, Action::EditingCancel),
-                (KeyCode::Backspace, Action::EditingBackspace),
+            AppScreen::Editing => vec![
+                (KeyCode::Enter, InputAction::EditingSubmit),
+                (KeyCode::Tab, InputAction::EditingToggleField),
+                (KeyCode::Esc, InputAction::EditingCancel),
+                (KeyCode::Backspace, InputAction::EditingBackspace),
             ],
-            CurrentScreen::Exiting => vec![
-                (KeyCode::Char('y'), Action::YesPrint),
-                (KeyCode::Char('n'), Action::NoPrint),
+            AppScreen::Exiting => vec![
+                (KeyCode::Char('y'), InputAction::YesPrint),
+                (KeyCode::Char('n'), InputAction::NoPrint),
             ],
         };
     }

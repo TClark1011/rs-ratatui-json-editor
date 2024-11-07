@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, CurrentScreen, CurrentlyEditing};
+use crate::app::{App, AppScreen, CurrentlyEditing};
 
 pub fn ui(frame: &mut Frame, app: &App) {
     let vertical_panels = Layout::default()
@@ -33,9 +33,9 @@ pub fn ui(frame: &mut Frame, app: &App) {
 
     //# Footer
     let (current_screen_navigation_str, current_screen_navigation_fg) = match app.current_screen {
-        CurrentScreen::Main => ("Normal Mode", Color::Green),
-        CurrentScreen::Editing => ("Editing Mode", Color::Yellow),
-        CurrentScreen::Exiting => ("Exiting", Color::LightRed),
+        AppScreen::Main => ("Normal Mode", Color::Green),
+        AppScreen::Editing => ("Editing Mode", Color::Yellow),
+        AppScreen::Exiting => ("Exiting", Color::LightRed),
     };
 
     let current_screen_navigation_text = Span::styled(
@@ -68,7 +68,7 @@ pub fn ui(frame: &mut Frame, app: &App) {
         format!(
             " {}",
             match app.current_screen {
-                CurrentScreen::Editing => "(ESC) cancel / (Tab) switch / (Enter) submit",
+                AppScreen::Editing => "(ESC) cancel / (Tab) switch / (Enter) submit",
                 _ => "(q) quit / (e) new pair",
             }
         ),
@@ -137,7 +137,7 @@ pub fn ui(frame: &mut Frame, app: &App) {
     }
 
     //# Exit Popup
-    if let CurrentScreen::Exiting = app.current_screen {
+    if let AppScreen::Exiting = app.current_screen {
         frame.render_widget(Clear, frame.area()); //this clears the entire screen and anything already drawn
 
         let popup_block = Block::default()

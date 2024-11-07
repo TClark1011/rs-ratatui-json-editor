@@ -1,6 +1,6 @@
 use std::{error::Error, io};
 
-use app::{Action, App, CurrentScreen, CurrentlyEditing};
+use app::{App, AppScreen, CurrentlyEditing, InputAction};
 use ratatui::crossterm::event::{
     self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent,
 };
@@ -74,32 +74,32 @@ fn handle_input(app: &mut App, key_event: KeyEvent) -> Option<bool> {
 
     if let Some((_, action)) = matching_key_bind_res {
         match action {
-            Action::Quit => {
-                app.goto_screen(CurrentScreen::Exiting);
+            InputAction::Quit => {
+                app.goto_screen(AppScreen::Exiting);
             }
-            Action::OpenNewPairPopup => {
-                app.goto_screen(CurrentScreen::Editing);
+            InputAction::OpenNewPairPopup => {
+                app.goto_screen(AppScreen::Editing);
                 app.toggle_editing();
             }
-            Action::EditingCancel => {
+            InputAction::EditingCancel => {
                 app.clear_editing_state();
-                app.goto_screen(CurrentScreen::Main);
+                app.goto_screen(AppScreen::Main);
             }
-            Action::EditingToggleField => {
+            InputAction::EditingToggleField => {
                 app.toggle_editing();
             }
-            Action::EditingSubmit => match app.currently_editing {
+            InputAction::EditingSubmit => match app.currently_editing {
                 Some(CurrentlyEditing::Key) => {
                     app.currently_editing = Some(CurrentlyEditing::Value);
                 }
                 Some(CurrentlyEditing::Value) => {
                     app.save_key_value();
                     app.clear_editing_state();
-                    app.goto_screen(CurrentScreen::Main);
+                    app.goto_screen(AppScreen::Main);
                 }
                 None => {}
             },
-            Action::EditingBackspace => match app.currently_editing {
+            InputAction::EditingBackspace => match app.currently_editing {
                 Some(CurrentlyEditing::Key) => {
                     app.key_input.pop();
                 }
@@ -108,14 +108,14 @@ fn handle_input(app: &mut App, key_event: KeyEvent) -> Option<bool> {
                 }
                 None => {}
             },
-            Action::YesPrint => {
+            InputAction::YesPrint => {
                 result = Some(true);
             }
-            Action::NoPrint => {
+            InputAction::NoPrint => {
                 result = Some(false);
             }
         }
-    } else if let CurrentScreen::Editing = app.current_screen {
+    } else if let AppScreen::Editing = app.current_screen {
         // Special case for typing into the inputs
         if let KeyCode::Char(character) = key_event.code {
             match app.currently_editing {
