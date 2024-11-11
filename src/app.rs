@@ -36,6 +36,10 @@ impl InputAction {
             InputAction::EditingCancel => Some("cancel"),
             InputAction::EditingToggleField => Some("switch"),
             InputAction::EditingSubmit => Some("submit"),
+            InputAction::CursorSelect => Some("select"),
+            InputAction::CursorDown => Some("down"),
+            InputAction::CursorUp => Some("up"),
+            InputAction::CursorCancel => Some("cancel"),
             _ => None,
         }
     }
@@ -69,7 +73,7 @@ impl App {
             current_screen: AppScreen::Main,
         };
 
-        result.update_screen_related_settings();
+        result.update_state();
 
         result
     }
@@ -79,25 +83,33 @@ impl App {
     }
 
     pub fn goto_screen(&mut self, new_screen: AppScreen) {
+        if let AppScreen::Editing = new_screen {
+            self.currently_editing = Some(CurrentlyEditing::Key);
+        }
         self.current_screen = new_screen;
-        self.update_screen_related_settings();
     }
 
-    fn update_screen_related_settings(&mut self) {
+    pub fn update_state(&mut self) {
         self.available_bindings = match self.current_screen {
             AppScreen::Main => {
-                vec![
+                let mut result = vec![
                     (KeyCode::Char('e'), InputAction::OpenNewPairPopup),
                     (KeyCode::Char('q'), InputAction::Quit),
-                    (KeyCode::Up, InputAction::CursorUp),
-                    (KeyCode::Down, InputAction::CursorDown),
-                    (KeyCode::Esc, InputAction::CursorCancel),
-                    (KeyCode::Enter, InputAction::CursorSelect),
-                ]
+                ];
+                if !self.pairs.is_empty() {
+                    result.push((KeyCode::Enter, InputAction::CursorSelect));
+                    result.push((KeyCode::Down, InputAction::CursorDown));
+                    result.push((KeyCode::Up, InputAction::CursorUp));
+
+                    if self.list_ui_state.selected().is_some() {
+                        result.push((KeyCode::Esc, InputAction::CursorCancel));
+                    }
+                }
+
+                result
             }
             AppScreen::Editing => {
                 self.list_ui_state.select(None);
-                self.currently_editing = Some(CurrentlyEditing::Key);
                 vec![
                     (KeyCode::Enter, InputAction::EditingSubmit),
                     (KeyCode::Tab, InputAction::EditingToggleField),
