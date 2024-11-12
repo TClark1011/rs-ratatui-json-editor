@@ -1,3 +1,6 @@
+use core::fmt;
+use std::fmt::{Display, Formatter};
+
 use indexmap::IndexMap;
 use ratatui::{crossterm::event::KeyCode, widgets::ListState};
 
@@ -10,6 +13,7 @@ pub enum AppScreen {
 pub enum CurrentlyEditing {
     Key,
     Value,
+    Type,
 }
 
 pub enum InputAction {
@@ -22,16 +26,24 @@ pub enum InputAction {
     EditingCancel,
     EditingToggleField,
     EditingBackspace,
+    EditingUp,
+    EditingDown,
+    EditingLeft,
+    EditingRight,
+    EditingBoolToggle,
     CursorUp,
     CursorDown,
     CursorCancel,
     CursorSelect,
+    RequestPairDelete,
+    DeleteYes,
+    DeleteNo,
 }
 
 impl InputAction {
     pub fn description(&self) -> Option<&str> {
         match self {
-            InputAction::OpenNewPairPopup => Some("new pair"),
+            InputAction::OpenNewPairPopup => Some("new"),
             InputAction::Quit => Some("quit"),
             InputAction::EditingCancel => Some("cancel"),
             InputAction::EditingToggleField => Some("switch"),
@@ -40,6 +52,10 @@ impl InputAction {
             InputAction::CursorDown => Some("down"),
             InputAction::CursorUp => Some("up"),
             InputAction::CursorCancel => Some("cancel"),
+            InputAction::EditingBoolToggle => Some("toggle"),
+            InputAction::RequestPairDelete => Some("delete"),
+            InputAction::DeleteYes => Some("yes"),
+            InputAction::DeleteNo => Some("no"),
             _ => None,
         }
     }
@@ -51,13 +67,61 @@ pub enum OpenItemEditError {
     InvalidIndex,
 }
 
+#[derive(Clone, Copy)]
+pub enum JsonValueType {
+    Number,
+    String,
+    Boolean,
+}
+
+impl Display for JsonValueType {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            JsonValueType::Number => write!(f, "Number"),
+            JsonValueType::String => write!(f, "String"),
+            JsonValueType::Boolean => write!(f, "Boolean"),
+        }
+    }
+}
+
+pub enum JsonValue {
+    Number(f64),
+    String(String),
+    Boolean(bool),
+}
+
+impl serde::Serialize for JsonValue {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            JsonValue::Number(n) => {
+                if n.fract() != 0.0 {
+                    serializer.serialize_f64(*n)
+                } else if *n < 0.0 {
+                    serializer.serialize_i64(*n as i64)
+                } else {
+                    serializer.serialize_u64(*n as u64)
+                }
+            }
+            JsonValue::String(s) => serializer.serialize_str(s),
+            JsonValue::Boolean(b) => serializer.serialize_bool(*b),
+        }
+    }
+}
+
 pub struct App {
     pub key_input: String,
     pub value_input: String,
-    pub pairs: IndexMap<String, String>,
+    pub pairs: IndexMap<String, JsonValue>,
     pub currently_editing: Option<CurrentlyEditing>,
     pub available_bindings: Vec<KeyBinding>,
     pub list_ui_state: ListState,
+    pub selected_value_type: JsonValueType,
+    pub type_list_ui_state: ListState,
+    pub type_list_open: bool,
+    pub target_delete_key: Option<String>,
     current_screen: AppScreen,
 }
 
@@ -71,6 +135,10 @@ impl App {
             available_bindings: Vec::new(),
             list_ui_state: ListState::default(),
             current_screen: AppScreen::Main,
+            selected_value_type: JsonValueType::String,
+            type_list_ui_state: ListState::default(),
+            type_list_open: false,
+            target_delete_key: None,
         };
 
         result.update_state();
@@ -92,30 +160,56 @@ impl App {
     pub fn update_state(&mut self) {
         self.available_bindings = match self.current_screen {
             AppScreen::Main => {
-                let mut result = vec![
-                    (KeyCode::Char('e'), InputAction::OpenNewPairPopup),
-                    (KeyCode::Char('q'), InputAction::Quit),
-                ];
-                if !self.pairs.is_empty() {
-                    result.push((KeyCode::Enter, InputAction::CursorSelect));
-                    result.push((KeyCode::Down, InputAction::CursorDown));
-                    result.push((KeyCode::Up, InputAction::CursorUp));
+                let delete_modal_is_open = self.target_delete_key.is_some();
+                if delete_modal_is_open {
+                    vec![
+                        (KeyCode::Char('y'), InputAction::DeleteYes),
+                        (KeyCode::Char('n'), InputAction::DeleteNo),
+                    ]
+                } else {
+                    let mut result = vec![
+                        (KeyCode::Char('e'), InputAction::OpenNewPairPopup),
+                        (KeyCode::Char('q'), InputAction::Quit),
+                    ];
 
-                    if self.list_ui_state.selected().is_some() {
-                        result.push((KeyCode::Esc, InputAction::CursorCancel));
+                    if !self.pairs.is_empty() && !delete_modal_is_open {
+                        result.push((KeyCode::Enter, InputAction::CursorSelect));
+                        result.push((KeyCode::Down, InputAction::CursorDown));
+                        result.push((KeyCode::Up, InputAction::CursorUp));
+
+                        if self.list_ui_state.selected().is_some() {
+                            result.push((KeyCode::Esc, InputAction::CursorCancel));
+                            result.push((KeyCode::Backspace, InputAction::RequestPairDelete));
+                        }
                     }
-                }
 
-                result
+                    result
+                }
             }
             AppScreen::Editing => {
                 self.list_ui_state.select(None);
-                vec![
+
+                if self.type_list_open && !self.type_list_ui_state.selected().is_some() {
+                    self.type_list_ui_state.select_first();
+                }
+                let mut result = vec![
                     (KeyCode::Enter, InputAction::EditingSubmit),
                     (KeyCode::Tab, InputAction::EditingToggleField),
                     (KeyCode::Esc, InputAction::EditingCancel),
                     (KeyCode::Backspace, InputAction::EditingBackspace),
-                ]
+                    (KeyCode::Up, InputAction::EditingUp),
+                    (KeyCode::Down, InputAction::EditingDown),
+                    (KeyCode::Left, InputAction::EditingLeft),
+                    (KeyCode::Right, InputAction::EditingRight),
+                ];
+
+                if let JsonValueType::Boolean = self.selected_value_type {
+                    if let Some(CurrentlyEditing::Value) = self.currently_editing {
+                        result.push((KeyCode::Char(' '), InputAction::EditingBoolToggle));
+                    }
+                }
+
+                result
             }
             AppScreen::Exiting => vec![
                 (KeyCode::Char('y'), InputAction::ExitYesPrint),
@@ -125,9 +219,29 @@ impl App {
         };
     }
 
+    pub fn select_value_type(&mut self, new_type: JsonValueType) {
+        match new_type {
+            JsonValueType::Boolean => {
+                self.value_input = "false".to_string();
+            }
+            _ => {
+                self.value_input = "".to_string();
+            }
+        }
+        self.selected_value_type = new_type;
+    }
+
     pub fn save_key_value(&mut self) {
-        self.pairs
-            .insert(self.key_input.clone(), self.value_input.clone());
+        self.pairs.insert(
+            self.key_input.clone(),
+            match self.selected_value_type {
+                JsonValueType::Number => JsonValue::Number(self.value_input.parse().unwrap_or(0.0)),
+                JsonValueType::Boolean => {
+                    JsonValue::Boolean(self.value_input.parse().unwrap_or(false))
+                }
+                JsonValueType::String => JsonValue::String(self.value_input.clone()),
+            },
+        );
     }
 
     pub fn clear_editing_state(&mut self) {
@@ -136,23 +250,23 @@ impl App {
         self.currently_editing = None;
     }
 
-    pub fn toggle_editing(&mut self) {
-        if let Some(edit_mode) = &self.currently_editing {
-            match edit_mode {
-                CurrentlyEditing::Key => self.currently_editing = Some(CurrentlyEditing::Value),
-                CurrentlyEditing::Value => self.currently_editing = Some(CurrentlyEditing::Key),
-            }
-        } else {
-            self.currently_editing = Some(CurrentlyEditing::Key)
-        }
-    }
-
     pub fn open_item_edit(&mut self, index: usize) -> Result<(), OpenItemEditError> {
         match self.pairs.get_index(index) {
             None => Err(OpenItemEditError::InvalidIndex),
-            Some((key, value)) => {
+            // Some(key, JsonValue::String(value)) => {}
+            Some((key, json_value)) => {
                 self.key_input = key.clone();
-                self.value_input = value.clone();
+                match json_value {
+                    JsonValue::String(value) => {
+                        self.value_input = value.clone();
+                    }
+                    JsonValue::Boolean(bool) => {
+                        self.value_input = bool.to_string();
+                    }
+                    JsonValue::Number(number) => {
+                        self.value_input = number.to_string();
+                    }
+                };
                 self.goto_screen(AppScreen::Editing);
                 self.currently_editing = Some(CurrentlyEditing::Value);
 
@@ -166,5 +280,13 @@ impl App {
         println!("{output}");
 
         Ok(())
+    }
+
+    pub fn get_value_type_vec() -> Vec<JsonValueType> {
+        vec![
+            JsonValueType::String,
+            JsonValueType::Number,
+            JsonValueType::Boolean,
+        ]
     }
 }

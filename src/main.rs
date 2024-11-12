@@ -91,23 +91,51 @@ fn handle_input(app: &mut App, key_event: KeyEvent) -> Option<bool> {
                 app.goto_screen(AppScreen::Editing);
             }
             InputAction::EditingCancel => {
-                app.clear_editing_state();
-                app.goto_screen(AppScreen::Main);
+                if app.type_list_open {
+                    app.type_list_open = false;
+                } else {
+                    app.clear_editing_state();
+                    app.goto_screen(AppScreen::Main);
+                }
             }
-            InputAction::EditingToggleField => {
-                app.toggle_editing();
-            }
-            InputAction::EditingSubmit => match app.currently_editing {
+            InputAction::EditingToggleField => match app.currently_editing {
                 Some(CurrentlyEditing::Key) => {
                     app.currently_editing = Some(CurrentlyEditing::Value);
                 }
                 Some(CurrentlyEditing::Value) => {
-                    app.save_key_value();
-                    app.clear_editing_state();
-                    app.goto_screen(AppScreen::Main);
+                    app.currently_editing = Some(CurrentlyEditing::Key);
+                }
+                Some(CurrentlyEditing::Type) => {
+                    app.currently_editing = Some(CurrentlyEditing::Key);
                 }
                 None => {}
             },
+            InputAction::EditingSubmit => {
+                if app.type_list_open {
+                    if let Some(selected_index) = app.type_list_ui_state.selected() {
+                        app.type_list_open = false;
+
+                        let value_types = App::get_value_type_vec();
+                        let corresponding_json_type = value_types.get(selected_index).unwrap();
+                        app.select_value_type(*corresponding_json_type);
+                    }
+                } else {
+                    match app.currently_editing {
+                        Some(CurrentlyEditing::Key) => {
+                            app.currently_editing = Some(CurrentlyEditing::Value);
+                        }
+                        Some(CurrentlyEditing::Value) => {
+                            app.save_key_value();
+                            app.clear_editing_state();
+                            app.goto_screen(AppScreen::Main);
+                        }
+                        Some(CurrentlyEditing::Type) => {
+                            app.type_list_open = true;
+                        }
+                        None => {}
+                    };
+                }
+            }
             InputAction::EditingBackspace => match app.currently_editing {
                 Some(CurrentlyEditing::Key) => {
                     app.key_input.pop();
@@ -115,8 +143,56 @@ fn handle_input(app: &mut App, key_event: KeyEvent) -> Option<bool> {
                 Some(CurrentlyEditing::Value) => {
                     app.value_input.pop();
                 }
-                None => {}
+                _ => {}
             },
+            InputAction::EditingLeft => match app.currently_editing {
+                Some(CurrentlyEditing::Value) => {
+                    app.currently_editing = Some(CurrentlyEditing::Key);
+                }
+                Some(CurrentlyEditing::Type) => {
+                    app.currently_editing = Some(CurrentlyEditing::Key);
+                }
+                _ => {}
+            },
+            InputAction::EditingRight => match app.currently_editing {
+                Some(CurrentlyEditing::Key) => {
+                    app.currently_editing = Some(CurrentlyEditing::Value);
+                }
+                Some(CurrentlyEditing::Type) => {
+                    app.currently_editing = Some(CurrentlyEditing::Value);
+                }
+                _ => {}
+            },
+            InputAction::EditingUp => {
+                if app.type_list_open {
+                    app.type_list_ui_state.select_previous();
+                } else {
+                    match app.currently_editing {
+                        Some(CurrentlyEditing::Type) => {
+                            app.currently_editing = Some(CurrentlyEditing::Key);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            InputAction::EditingDown => {
+                if app.type_list_open {
+                    app.type_list_ui_state.select_next();
+                } else {
+                    match app.currently_editing {
+                        Some(CurrentlyEditing::Key) => {
+                            app.currently_editing = Some(CurrentlyEditing::Type);
+                        }
+                        Some(CurrentlyEditing::Value) => {
+                            app.currently_editing = Some(CurrentlyEditing::Type);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            InputAction::EditingBoolToggle => {
+                app.value_input = (!(app.value_input.parse::<bool>().unwrap())).to_string();
+            }
             InputAction::CursorUp => {
                 app.list_ui_state.select_previous();
             }
@@ -129,10 +205,30 @@ fn handle_input(app: &mut App, key_event: KeyEvent) -> Option<bool> {
             InputAction::CursorSelect => {
                 if let Some(selected_index) = app.list_ui_state.selected() {
                     match app.open_item_edit(selected_index) {
-                        Err(_) => result = Some(false),
+                        Err(_) => return Some(false),
                         Ok(_) => {}
                     }
                 }
+            }
+            InputAction::RequestPairDelete => {
+                if let Some(selected_index) = app.list_ui_state.selected() {
+                    let entry = match app.pairs.get_index_entry(selected_index) {
+                        Some(entry) => entry,
+                        None => return Some(false),
+                    };
+                    let key = entry.key();
+
+                    app.target_delete_key = Some(key.into());
+                }
+            }
+            InputAction::DeleteYes => {
+                if let Some(target_key) = &app.target_delete_key {
+                    app.pairs.shift_remove(target_key.as_str());
+                    app.target_delete_key = None;
+                }
+            }
+            InputAction::DeleteNo => {
+                app.target_delete_key = None;
             }
         }
     } else if let AppScreen::Editing = app.get_current_screen() {
@@ -140,8 +236,16 @@ fn handle_input(app: &mut App, key_event: KeyEvent) -> Option<bool> {
         if let KeyCode::Char(character) = key_event.code {
             match app.currently_editing {
                 Some(CurrentlyEditing::Key) => app.key_input.push(character),
-                Some(CurrentlyEditing::Value) => app.value_input.push(character),
-                None => {}
+                Some(CurrentlyEditing::Value) => match app.selected_value_type {
+                    app::JsonValueType::String => app.value_input.push(character),
+                    app::JsonValueType::Number => {
+                        if character.is_numeric() || character == '.' {
+                            app.value_input.push(character);
+                        }
+                    }
+                    _ => {}
+                },
+                _ => {}
             }
         }
     };

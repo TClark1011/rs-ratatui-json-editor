@@ -1,13 +1,15 @@
 use ratatui::{
     crossterm::event::KeyCode,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Flex, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
     Frame,
 };
 
-use crate::app::{App, AppScreen, CurrentlyEditing};
+use crate::app::{App, AppScreen, CurrentlyEditing, JsonValue, JsonValueType};
+
+const COLOR_ACCENT: Color = Color::LightYellow;
 
 pub fn ui(frame: &mut Frame, app: &mut App) {
     let vertical_panels = Layout::default()
@@ -33,39 +35,6 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
     frame.render_widget(title, vertical_panels[0]); // render title to top panel
 
     //# Footer
-    let (current_screen_navigation_str, current_screen_navigation_fg) =
-        match app.get_current_screen() {
-            AppScreen::Main => ("Normal Mode", Color::Green),
-            AppScreen::Editing => ("Editing Mode", Color::Yellow),
-            AppScreen::Exiting => ("Exiting", Color::LightRed),
-        };
-
-    let current_screen_navigation_text = Span::styled(
-        format!(" {current_screen_navigation_str}"),
-        Style::default().fg(current_screen_navigation_fg),
-    )
-    .to_owned();
-
-    let (currently_editing_navigation_str, currently_editing_navigation_fg) =
-        match app.currently_editing {
-            Some(CurrentlyEditing::Value) => ("Editing Json Value", Color::Green),
-            Some(CurrentlyEditing::Key) => ("Editing Json Key", Color::LightGreen),
-            None => ("Not Editing Anything", Color::DarkGray),
-        };
-    let currently_editing_navigation_text = Span::styled(
-        currently_editing_navigation_str,
-        Style::default().fg(currently_editing_navigation_fg),
-    );
-
-    let all_navigation_text = vec![
-        current_screen_navigation_text,
-        Span::styled(" | ", Style::default().fg(Color::White)),
-        currently_editing_navigation_text,
-    ];
-
-    let active_mode_footer = Paragraph::new(Line::from(all_navigation_text))
-        .block(Block::default().borders(Borders::ALL));
-
     let current_keys_hint = Span::styled(
         format!(
             " {}",
@@ -88,65 +57,141 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
     let key_notes_footer =
         Paragraph::new(Line::from(current_keys_hint)).block(Block::default().borders(Borders::ALL));
 
-    let footer_panels = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(vertical_panels[2]);
-
-    frame.render_widget(active_mode_footer, footer_panels[0]);
-    frame.render_widget(key_notes_footer, footer_panels[1]);
-
-    let mut list_items = Vec::<ListItem>::new();
+    frame.render_widget(key_notes_footer, vertical_panels[2]);
 
     //# Existing Pairs List
+    let mut list_items = Vec::<ListItem>::new();
+
     for key in app.pairs.keys() {
         list_items.push(ListItem::new(Line::from(Span::styled(
             format!(
-                "\"{: <25}: \"{}\"",
+                "\"{: <25}: {}",
                 format!("{key}\""),
-                app.pairs.get(key).unwrap()
+                match app.pairs.get(key) {
+                    Some(value) => match value {
+                        JsonValue::String(s) => format!("\"{}\"", s),
+                        JsonValue::Boolean(b) => format!("{}", b),
+                        JsonValue::Number(n) => format!("{}", n),
+                    },
+                    None => "null".to_string(),
+                }
             ),
-            Style::default().fg(Color::Yellow),
+            Style::default().fg(COLOR_ACCENT),
         ))))
     }
     frame.render_stateful_widget(
-        List::new(list_items).highlight_style(Style::default().bg(Color::White).fg(Color::Black)),
+        List::new(list_items).highlight_style(Style::default().bg(COLOR_ACCENT).fg(Color::Black)),
         vertical_panels[1],
         &mut app.list_ui_state,
     );
 
-    //# Editing Popup
-    if let Some(editing) = &app.currently_editing {
+    //# Delete Confirm Popup
+    if let Some(target_delete_key) = &app.target_delete_key {
         let popup_block = Block::default()
-            .title("Enter a new key-value pair")
+            .title(" Delete?")
             .borders(Borders::NONE)
             .style(Style::default().bg(Color::DarkGray));
 
-        let area = centered_rect(60, 25, frame.area());
+        let area = centered_rect(30, 30, frame.area());
 
-        let popup_panels = Layout::default()
-            .direction(Direction::Horizontal)
+        let panels = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(1), Constraint::Fill(1)])
             .margin(1)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
             .split(area);
 
-        let mut key_block = Block::default().title("Key").borders(Borders::ALL);
-        let mut value_block = Block::default().title("Value").borders(Borders::ALL);
+        let [control_hint_panel] = Layout::vertical([Constraint::Length(1)])
+            .flex(Flex::Center)
+            .areas(panels[1]);
 
-        let active_style = Style::default().bg(Color::LightYellow).fg(Color::Black);
+        let message_paragraph = Paragraph::new(format!(
+            "Are you sure you want to delete the key: \"{target_delete_key}\"?"
+        ));
 
-        match editing {
-            CurrentlyEditing::Key => key_block = key_block.style(active_style),
-            CurrentlyEditing::Value => value_block = value_block.style(active_style),
-        }
+        let control_hint_text = Paragraph::new("(y/n)").centered();
 
         frame.render_widget(popup_block, area);
+        frame.render_widget(message_paragraph, panels[0]);
+        frame.render_widget(control_hint_text, control_hint_panel);
+    }
 
-        let key_text = Paragraph::new(app.key_input.clone()).block(key_block);
-        frame.render_widget(key_text, popup_panels[0]);
+    if let Some(editing) = &app.currently_editing {
+        if !app.type_list_open {
+            //# Editing Popup
+            let popup_block = Block::default()
+                .title("Enter a new key-value pair")
+                .borders(Borders::NONE)
+                .style(Style::default().bg(Color::DarkGray));
 
-        let value_text = Paragraph::new(app.value_input.clone()).block(value_block);
-        frame.render_widget(value_text, popup_panels[1]);
+            let area = centered_rect(60, 50, frame.area());
+
+            let popup_vertical_panels = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Percentage(100), Constraint::Length(3)])
+                .margin(1)
+                .split(area);
+            let popup_panels = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(popup_vertical_panels[0]);
+
+            let mut key_block = Block::default().title("Key").borders(Borders::ALL);
+            let mut value_block = Block::default().title("Value").borders(Borders::ALL);
+            let mut type_block = Block::default().title("Type").borders(Borders::ALL);
+
+            let active_style = Style::default().bg(COLOR_ACCENT).fg(Color::Black);
+
+            match editing {
+                CurrentlyEditing::Key => key_block = key_block.style(active_style),
+                CurrentlyEditing::Value => value_block = value_block.style(active_style),
+                CurrentlyEditing::Type => type_block = type_block.style(active_style),
+            }
+
+            frame.render_widget(popup_block, area);
+
+            let key_text = Paragraph::new(app.key_input.clone()).block(key_block);
+            frame.render_widget(key_text, popup_panels[0]);
+
+            let value_text = Paragraph::new(app.value_input.clone()).block(value_block);
+            frame.render_widget(value_text, popup_panels[1]);
+
+            let type_text = Paragraph::new(match app.selected_value_type {
+                JsonValueType::String => "String",
+                JsonValueType::Boolean => "Boolean",
+                JsonValueType::Number => "Number",
+            })
+            .block(type_block);
+            frame.render_widget(type_text, popup_vertical_panels[1]);
+        } else {
+            // # Editing Type Selection Popup
+            let type_popup_block = Block::default()
+                .title("Select type of new value")
+                .borders(Borders::NONE)
+                .style(Style::default().bg(Color::DarkGray));
+
+            let type_popup_area = centered_rect(60, 30, frame.area());
+
+            let type_popup_panels = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Percentage(100)])
+                .margin(1)
+                .split(type_popup_area);
+
+            let type_list_ui = List::new(App::get_value_type_vec().iter().map(|value_type| {
+                Line::from(Span::styled(
+                    format!(" {value_type} "),
+                    Style::default().fg(COLOR_ACCENT),
+                ))
+            }))
+            .highlight_style(Style::default().bg(COLOR_ACCENT).fg(Color::DarkGray));
+
+            frame.render_widget(type_popup_block, type_popup_area);
+            frame.render_stateful_widget(
+                type_list_ui,
+                type_popup_panels[0],
+                &mut app.type_list_ui_state,
+            );
+        }
     }
 
     //# Exit Popup
