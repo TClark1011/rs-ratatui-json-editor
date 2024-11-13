@@ -90,6 +90,21 @@ pub enum JsonValue {
     Boolean(bool),
 }
 
+pub enum JsonValueFromSerdeError {
+    UnsupportedType,
+}
+
+impl JsonValue {
+    pub fn from_serde(serde_value: serde_json::Value) -> Result<Self, JsonValueFromSerdeError> {
+        match serde_value {
+            serde_json::Value::Number(n) => Ok(JsonValue::Number(n.as_f64().unwrap_or(0.0))),
+            serde_json::Value::String(s) => Ok(JsonValue::String(s)),
+            serde_json::Value::Bool(b) => Ok(JsonValue::Boolean(b)),
+            _ => Err(JsonValueFromSerdeError::UnsupportedType),
+        }
+    }
+}
+
 impl serde::Serialize for JsonValue {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -111,10 +126,12 @@ impl serde::Serialize for JsonValue {
     }
 }
 
+type JsonData = IndexMap<String, JsonValue>;
+
 pub struct App {
     pub key_input: String,
     pub value_input: String,
-    pub pairs: IndexMap<String, JsonValue>,
+    pub pairs: JsonData,
     pub currently_editing: Option<CurrentlyEditing>,
     pub available_bindings: Vec<KeyBinding>,
     pub list_ui_state: ListState,
@@ -125,25 +142,54 @@ pub struct App {
     current_screen: AppScreen,
 }
 
+pub enum AppError {
+    InvalidInputJson,
+}
+
 impl App {
-    pub fn new() -> App {
-        let mut result = App {
-            key_input: String::new(),
-            value_input: String::new(),
-            pairs: IndexMap::new(),
-            currently_editing: None,
-            available_bindings: Vec::new(),
-            list_ui_state: ListState::default(),
-            current_screen: AppScreen::Main,
-            selected_value_type: JsonValueType::String,
-            type_list_ui_state: ListState::default(),
-            type_list_open: false,
-            target_delete_key: None,
+    pub fn new(parsed_data: Option<serde_json::Value>) -> Result<App, AppError> {
+        let data_read_opt: Option<JsonData> = match parsed_data {
+            None => Some(IndexMap::new()),
+            Some(serde_json::Value::Object(data)) => {
+                let mut ret = JsonData::new();
+
+                let parse_attempt: Result<(), JsonValueFromSerdeError> =
+                    data.into_iter().try_for_each(|(key, value)| {
+                        let json_value = JsonValue::from_serde(value)?;
+                        ret.insert(key, json_value);
+                        Ok(())
+                    });
+
+                if parse_attempt.is_err() {
+                    None
+                } else {
+                    Some(ret)
+                }
+            }
+            _ => None,
         };
 
-        result.update_state();
+        match data_read_opt {
+            None => Err(AppError::InvalidInputJson),
+            Some(data) => {
+                let mut result = App {
+                    key_input: String::new(),
+                    value_input: String::new(),
+                    pairs: data,
+                    currently_editing: None,
+                    available_bindings: Vec::new(),
+                    list_ui_state: ListState::default(),
+                    current_screen: AppScreen::Main,
+                    selected_value_type: JsonValueType::String,
+                    type_list_ui_state: ListState::default(),
+                    type_list_open: false,
+                    target_delete_key: None,
+                };
+                result.update_state();
 
-        result
+                Ok(result)
+            }
+        }
     }
 
     pub fn get_current_screen(&self) -> &AppScreen {

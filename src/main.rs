@@ -1,6 +1,8 @@
+use std::fs;
 use std::{error::Error, io};
 
 use app::{App, AppScreen, CurrentlyEditing, InputAction};
+use clap::Parser;
 use ratatui::crossterm::event::{
     self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent,
 };
@@ -14,37 +16,63 @@ use ui::ui;
 
 mod app;
 mod ui;
+
+#[derive(Parser)]
+#[command(about)]
+struct CliArgs {
+    /// The input file to read from
+    input_file: Option<String>,
+}
 fn main() -> Result<(), Box<dyn Error>> {
-    enable_raw_mode()?;
+    let args = CliArgs::parse();
 
-    let mut stderr = io::stderr();
+    let parsed_data: Option<serde_json::Value> = args
+        .input_file
+        .map(fs::read_to_string)
+        .map(Result::ok)
+        .flatten()
+        .map(|s| serde_json::from_str(s.as_str()))
+        .map(Result::ok)
+        .flatten();
 
-    execute!(stderr, EnterAlternateScreen, EnableMouseCapture)?;
+    match App::new(parsed_data) {
+        Ok(mut app) => {
+            enable_raw_mode()?;
 
-    let backend = CrosstermBackend::new(stderr);
-    let mut terminal = Terminal::new(backend)?;
+            let mut stderr = io::stderr();
 
-    let mut app = App::new();
-    let res = run_app(&mut terminal, &mut app);
+            execute!(stderr, EnterAlternateScreen, EnableMouseCapture)?;
 
-    disable_raw_mode()?;
+            let backend = CrosstermBackend::new(stderr);
+            let mut terminal = Terminal::new(backend)?;
 
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
+            let res = run_app(&mut terminal, &mut app);
 
-    if let Ok(do_print) = res {
-        if do_print {
-            app.print_json()?;
+            disable_raw_mode()?;
+
+            execute!(
+                terminal.backend_mut(),
+                LeaveAlternateScreen,
+                DisableMouseCapture
+            )?;
+            terminal.show_cursor()?;
+
+            if let Ok(do_print) = res {
+                if do_print {
+                    app.print_json()?;
+                }
+            } else if let Err(err) = res {
+                println!("{err:?}");
+            };
+
+            Ok(())
         }
-    } else if let Err(err) = res {
-        println!("{err:?}");
-    };
+        Err(_) => {
+            println!("Error parsing JSON data");
 
-    Ok(())
+            Ok(())
+        }
+    }
 }
 
 fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<bool> {
