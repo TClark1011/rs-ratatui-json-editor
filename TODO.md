@@ -8,9 +8,12 @@
 - [ ] control hints for list navigation, selection, deletion (must only show up when needed)
 - [x] numbers
 - [x] booleans
+- [ ] null
 - [ ] value input validation
 
 # Maybe Future
 
-- [ ] objects
-- [ ] arrays
+- [ ] Complex value types
+  - [ ] objects
+  - [ ] arrays
+- [ ] customise key bindings
