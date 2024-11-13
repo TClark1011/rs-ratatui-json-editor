@@ -25,6 +25,24 @@
 		{
 			"type": "lldb",
 			"request": "launch",
+			"name": "Debug executable 'rs-ratatui-json-editor' with empty input file",
+			"cargo": {
+				"args": [
+					"build",
+					"--bin=rs-ratatui-json-editor",
+					"--package=rs-ratatui-json-editor"
+				],
+				"filter": {
+					"name": "rs-ratatui-json-editor",
+					"kind": "bin"
+				}
+			},
+			"args": ["test-files/empty.json"],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
 			"name": "Debug unit tests in executable 'rs-ratatui-json-editor'",
 			"cargo": {
 				"args": [

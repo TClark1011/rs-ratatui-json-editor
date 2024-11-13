@@ -1,5 +1,10 @@
 use core::fmt;
-use std::fmt::{Display, Formatter};
+use std::fs;
+use std::io::{self, Write};
+use std::{
+    fmt::{Display, Formatter},
+    fs::File,
+};
 
 use indexmap::IndexMap;
 use ratatui::{crossterm::event::KeyCode, widgets::ListState};
@@ -18,8 +23,8 @@ pub enum CurrentlyEditing {
 
 pub enum InputAction {
     Quit,
-    ExitYesPrint,
-    ExitNoPrint,
+    ExitYesSave,
+    ExitNoSave,
     ExitCancel,
     OpenNewPairPopup,
     EditingSubmit,
@@ -90,10 +95,6 @@ pub enum JsonValue {
     Boolean(bool),
 }
 
-pub enum JsonValueFromSerdeError {
-    UnsupportedType,
-}
-
 impl JsonValue {
     pub fn from_serde(serde_value: serde_json::Value) -> Result<Self, JsonValueFromSerdeError> {
         match serde_value {
@@ -139,15 +140,27 @@ pub struct App {
     pub type_list_ui_state: ListState,
     pub type_list_open: bool,
     pub target_delete_key: Option<String>,
+    pub target_write_file: Option<String>,
     current_screen: AppScreen,
 }
 
-pub enum AppError {
-    InvalidInputJson,
-}
-
 impl App {
-    pub fn new(parsed_data: Option<serde_json::Value>) -> Result<App, AppError> {
+    pub fn new(input_file_path: Option<String>) -> Result<App, AppError> {
+        let input_file_contents = input_file_path
+            .clone()
+            .map(fs::read_to_string)
+            .map(Result::ok)
+            .flatten();
+
+        if input_file_path.is_some() && input_file_contents.is_none() {
+            return Err(AppError::InputFileNotFound);
+        }
+
+        let parsed_data: Option<serde_json::Value> = input_file_contents
+            .map(|s| serde_json::from_str(s.as_str()))
+            .map(Result::ok)
+            .flatten();
+
         let data_read_opt: Option<JsonData> = match parsed_data {
             None => Some(IndexMap::new()),
             Some(serde_json::Value::Object(data)) => {
@@ -184,6 +197,7 @@ impl App {
                     type_list_ui_state: ListState::default(),
                     type_list_open: false,
                     target_delete_key: None,
+                    target_write_file: input_file_path,
                 };
                 result.update_state();
 
@@ -258,8 +272,8 @@ impl App {
                 result
             }
             AppScreen::Exiting => vec![
-                (KeyCode::Char('y'), InputAction::ExitYesPrint),
-                (KeyCode::Char('n'), InputAction::ExitNoPrint),
+                (KeyCode::Char('y'), InputAction::ExitYesSave),
+                (KeyCode::Char('n'), InputAction::ExitNoSave),
                 (KeyCode::Esc, InputAction::ExitCancel),
             ],
         };
@@ -321,11 +335,8 @@ impl App {
         }
     }
 
-    pub fn print_json(&self) -> serde_json::Result<()> {
-        let output = serde_json::to_string(&self.pairs)?;
-        println!("{output}");
-
-        Ok(())
+    pub fn serialize(&self) -> serde_json::Result<String> {
+        serde_json::to_string(&self.pairs)
     }
 
     pub fn get_value_type_vec() -> Vec<JsonValueType> {
@@ -335,4 +346,58 @@ impl App {
             JsonValueType::Boolean,
         ]
     }
+
+    pub fn write(&self) -> Result<(), AppWriteError> {
+        let serialized = self.serialize().map_err(AppWriteError::Serde)?;
+
+        match &self.target_write_file {
+            Some(path) => {
+                let mut file = File::create(path).map_err(AppWriteError::Io)?;
+
+                file.write_all(serialized.as_bytes())
+                    .map_err(AppWriteError::Io)?;
+            }
+            _ => {}
+        };
+
+        Ok(())
+    }
 }
+
+#[derive(Debug)]
+pub enum AppError {
+    InputFileNotFound,
+    InvalidInputJson,
+}
+
+impl Display for AppError {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            AppError::InputFileNotFound => write!(f, "Input file not found"),
+            AppError::InvalidInputJson => write!(f, "Invalid input JSON"),
+        }
+    }
+}
+
+impl std::error::Error for AppError {}
+
+pub enum JsonValueFromSerdeError {
+    UnsupportedType,
+}
+
+#[derive(Debug)]
+pub enum AppWriteError {
+    Serde(serde_json::Error),
+    Io(io::Error),
+}
+
+impl Display for AppWriteError {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            AppWriteError::Serde(e) => write!(f, "Serde error: {e}"),
+            AppWriteError::Io(e) => write!(f, "IO error: {e}"),
+        }
+    }
+}
+
+impl std::error::Error for AppWriteError {}

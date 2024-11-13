@@ -1,4 +1,3 @@
-use std::fs;
 use std::{error::Error, io};
 
 use app::{App, AppScreen, CurrentlyEditing, InputAction};
@@ -22,20 +21,16 @@ mod ui;
 struct CliArgs {
     /// The input file to read from
     input_file: Option<String>,
+
+    /// Whether to run in "dry" mode (no changes will be written to the output file)
+    #[arg(long)]
+    dry: bool,
 }
+
 fn main() -> Result<(), Box<dyn Error>> {
     let args = CliArgs::parse();
 
-    let parsed_data: Option<serde_json::Value> = args
-        .input_file
-        .map(fs::read_to_string)
-        .map(Result::ok)
-        .flatten()
-        .map(|s| serde_json::from_str(s.as_str()))
-        .map(Result::ok)
-        .flatten();
-
-    match App::new(parsed_data) {
+    match App::new(args.input_file) {
         Ok(mut app) => {
             enable_raw_mode()?;
 
@@ -57,19 +52,18 @@ fn main() -> Result<(), Box<dyn Error>> {
             )?;
             terminal.show_cursor()?;
 
-            if let Ok(do_print) = res {
-                if do_print {
-                    app.print_json()?;
+            if let Ok(do_save) = res {
+                if do_save && !args.dry {
+                    app.write()?;
                 }
             } else if let Err(err) = res {
-                println!("{err:?}");
+                println!("{err}");
             };
 
             Ok(())
         }
-        Err(_) => {
-            println!("Error parsing JSON data");
-
+        e => {
+            e?;
             Ok(())
         }
     }
@@ -103,10 +97,10 @@ fn handle_input(app: &mut App, key_event: KeyEvent) -> Option<bool> {
 
     if let Some((_, action)) = matching_key_bind_res {
         match action {
-            InputAction::ExitYesPrint => {
+            InputAction::ExitYesSave => {
                 result = Some(true);
             }
-            InputAction::ExitNoPrint => {
+            InputAction::ExitNoSave => {
                 result = Some(false);
             }
             InputAction::ExitCancel => {

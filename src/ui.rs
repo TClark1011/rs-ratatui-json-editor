@@ -3,13 +3,14 @@ use ratatui::{
     layout::{Constraint, Direction, Flex, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, Borders, Clear, List, ListItem, Padding, Paragraph, Wrap},
     Frame,
 };
 
 use crate::app::{App, AppScreen, CurrentlyEditing, JsonValue, JsonValueType};
 
 const COLOR_ACCENT: Color = Color::LightYellow;
+const COLOR_SURFACE: Color = Color::DarkGray;
 
 pub fn ui(frame: &mut Frame, app: &mut App) {
     let vertical_panels = Layout::default()
@@ -79,8 +80,12 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
             Style::default().fg(COLOR_ACCENT),
         ))))
     }
+
+    let pairs_block = Block::default().padding(Padding::horizontal(1));
     frame.render_stateful_widget(
-        List::new(list_items).highlight_style(Style::default().bg(COLOR_ACCENT).fg(Color::Black)),
+        List::new(list_items)
+            .block(pairs_block)
+            .highlight_style(Style::default().bg(COLOR_ACCENT).fg(Color::Black)),
         vertical_panels[1],
         &mut app.list_ui_state,
     );
@@ -90,7 +95,7 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
         let popup_block = Block::default()
             .title(" Delete?")
             .borders(Borders::NONE)
-            .style(Style::default().bg(Color::DarkGray));
+            .style(Style::default().bg(COLOR_SURFACE));
 
         let area = centered_rect(30, 30, frame.area());
 
@@ -121,7 +126,7 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
             let popup_block = Block::default()
                 .title("Enter a new key-value pair")
                 .borders(Borders::NONE)
-                .style(Style::default().bg(Color::DarkGray));
+                .style(Style::default().bg(COLOR_SURFACE));
 
             let area = centered_rect(60, 50, frame.area());
 
@@ -167,7 +172,7 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
             let type_popup_block = Block::default()
                 .title("Select type of new value")
                 .borders(Borders::NONE)
-                .style(Style::default().bg(Color::DarkGray));
+                .style(Style::default().bg(COLOR_SURFACE));
 
             let type_popup_area = centered_rect(60, 30, frame.area());
 
@@ -183,7 +188,7 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
                     Style::default().fg(COLOR_ACCENT),
                 ))
             }))
-            .highlight_style(Style::default().bg(COLOR_ACCENT).fg(Color::DarkGray));
+            .highlight_style(Style::default().bg(COLOR_ACCENT).fg(COLOR_SURFACE));
 
             frame.render_widget(type_popup_block, type_popup_area);
             frame.render_stateful_widget(
@@ -199,12 +204,11 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
         frame.render_widget(Clear, frame.area()); //this clears the entire screen and anything already drawn
 
         let popup_block = Block::default()
-            .title("Y/N")
-            .borders(Borders::NONE)
-            .style(Style::default().bg(Color::DarkGray));
+            .title(" Save?")
+            .style(Style::default().bg(COLOR_SURFACE));
 
         let exit_text = Text::styled(
-            "Would you like to output the buffer as json? (y/n)",
+            " Would you like to save your changes before exiting? (y/n)",
             Style::default().fg(Color::Red),
         );
         // the `trim: false` will stop the text from being cut off when over the edge of the block
