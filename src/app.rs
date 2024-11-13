@@ -68,8 +68,17 @@ impl InputAction {
 
 pub type KeyBinding = (KeyCode, InputAction);
 
+#[derive(Debug)]
 pub enum OpenItemEditError {
-    InvalidIndex,
+    InvalidIndex(usize),
+}
+
+impl Display for OpenItemEditError {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            OpenItemEditError::InvalidIndex(idx) => write!(f, "Invalid index {idx}"),
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -153,7 +162,7 @@ impl App {
             .flatten();
 
         if input_file_path.is_some() && input_file_contents.is_none() {
-            return Err(AppError::InputFileNotFound);
+            return Err(AppError::InputFileNotFound(input_file_path.unwrap()));
         }
 
         let parsed_data: Option<serde_json::Value> = input_file_contents
@@ -312,7 +321,7 @@ impl App {
 
     pub fn open_item_edit(&mut self, index: usize) -> Result<(), OpenItemEditError> {
         match self.pairs.get_index(index) {
-            None => Err(OpenItemEditError::InvalidIndex),
+            None => Err(OpenItemEditError::InvalidIndex(index)),
             // Some(key, JsonValue::String(value)) => {}
             Some((key, json_value)) => {
                 self.key_input = key.clone();
@@ -347,15 +356,18 @@ impl App {
         ]
     }
 
-    pub fn write(&self) -> Result<(), AppWriteError> {
-        let serialized = self.serialize().map_err(AppWriteError::Serde)?;
+    pub fn write(&self) -> Result<(), AppError> {
+        let serialized = self
+            .serialize()
+            .map_err(|e| AppError::UnableToSave(AppWriteError::Serde(e)))?;
 
         match &self.target_write_file {
             Some(path) => {
-                let mut file = File::create(path).map_err(AppWriteError::Io)?;
+                let mut file =
+                    File::create(path).map_err(|e| AppError::UnableToSave(AppWriteError::Io(e)))?;
 
                 file.write_all(serialized.as_bytes())
-                    .map_err(AppWriteError::Io)?;
+                    .map_err(|e| AppError::UnableToSave(AppWriteError::Io(e)))?;
             }
             _ => {}
         };
@@ -366,20 +378,39 @@ impl App {
 
 #[derive(Debug)]
 pub enum AppError {
-    InputFileNotFound,
+    InputFileNotFound(String),
     InvalidInputJson,
+    FailedToOpenPairEdit(OpenItemEditError),
+    NoEntryAtIndex(usize),
+    UnableToSave(AppWriteError),
+    FailedToDraw(io::Error),
+    FailedToReadEvent(io::Error),
 }
 
 impl Display for AppError {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
-            AppError::InputFileNotFound => write!(f, "Input file not found"),
+            AppError::InputFileNotFound(path) => write!(f, "No file found at path: {path}"),
             AppError::InvalidInputJson => write!(f, "Invalid input JSON"),
+            AppError::FailedToOpenPairEdit(e) => write!(f, "Failed to open pair for editing: {e}"),
+            AppError::UnableToSave(e) => write!(f, "Failed to write file: {e}"),
+            AppError::FailedToDraw(e) => write!(f, "An error occurred while rendering the UI: {e}"),
+            AppError::FailedToReadEvent(e) => {
+                write!(f, "An error occurred while reading input: {e}")
+            }
+            AppError::NoEntryAtIndex(usize) => write!(f, "No entry exists at index {usize}"),
         }
     }
 }
 
-impl std::error::Error for AppError {}
+impl std::error::Error for AppError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            AppError::UnableToSave(e) => Some(e),
+            _ => None,
+        }
+    }
+}
 
 pub enum JsonValueFromSerdeError {
     UnsupportedType,

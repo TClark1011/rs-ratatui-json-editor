@@ -7,12 +7,12 @@
   - [ ] provide alternate output file if input file was used
 - [x] edit items
 - [x] delete items
-- [ ] basic error handling (just exit and print error message)
+- [x] basic error handling (just exit and print error message)
 - [x] control hints for list navigation, selection, deletion (must only show up when needed)
 - [x] numbers
 - [x] booleans
 - [ ] null
-- [ ] value input validation
+- [ ] value input validation (can probably be done using serde_json)
 - [ ] exit confirmation
 
 # Maybe Future

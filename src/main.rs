@@ -1,6 +1,6 @@
 use std::{error::Error, io};
 
-use app::{App, AppScreen, CurrentlyEditing, InputAction};
+use app::{App, AppError, AppScreen, CurrentlyEditing, InputAction};
 use clap::Parser;
 use ratatui::crossterm::event::{
     self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent,
@@ -30,64 +30,75 @@ struct CliArgs {
 fn main() -> Result<(), Box<dyn Error>> {
     let args = CliArgs::parse();
 
-    match App::new(args.input_file) {
-        Ok(mut app) => {
-            enable_raw_mode()?;
+    let mut app = App::new(args.input_file)
+        .map_err(|e| {
+            eprintln!("{e}");
+            std::process::exit(1);
+        })
+        .unwrap();
 
-            let mut stderr = io::stderr();
+    // Prepare the terminal for the application
+    enable_raw_mode()?;
+    let mut stderr = io::stderr();
+    execute!(stderr, EnterAlternateScreen, EnableMouseCapture)?;
+    let backend = CrosstermBackend::new(stderr);
+    let mut terminal = Terminal::new(backend)?;
 
-            execute!(stderr, EnterAlternateScreen, EnableMouseCapture)?;
+    // Run the application
+    let app_result = run_app(&mut terminal, &mut app);
 
-            let backend = CrosstermBackend::new(stderr);
-            let mut terminal = Terminal::new(backend)?;
+    // Restore the terminal to its original state
+    disable_raw_mode()?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
+    terminal.show_cursor()?;
 
-            let res = run_app(&mut terminal, &mut app);
-
-            disable_raw_mode()?;
-
-            execute!(
-                terminal.backend_mut(),
-                LeaveAlternateScreen,
-                DisableMouseCapture
-            )?;
-            terminal.show_cursor()?;
-
-            if let Ok(do_save) = res {
-                if do_save && !args.dry {
-                    app.write()?;
-                }
-            } else if let Err(err) = res {
-                println!("{err}");
-            };
-
-            Ok(())
+    match app_result {
+        Ok(should_save) => {
+            if !args.dry && should_save {
+                app.write()?;
+            }
+            return Ok(());
         }
-        e => {
-            e?;
-            Ok(())
+        Err(err) => {
+            eprintln!("{:?}", err);
+            std::process::exit(1);
         }
     }
 }
 
-fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<bool> {
+fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<bool, AppError> {
     loop {
         app.update_state();
-        terminal.draw(|frame| ui(frame, app))?;
+        terminal
+            .draw(|frame| ui(frame, app))
+            .map_err(AppError::FailedToDraw)?;
 
-        if let Event::Key(key_event) = event::read()? {
-            if let Some(should_print) = handle_input(app, key_event) {
-                // App has exited
-                return Ok(should_print);
-            };
+        if let Event::Key(key_event) = event::read().map_err(AppError::FailedToReadEvent)? {
+            match handle_input(app, key_event) {
+                Ok(Some(should_save)) => {
+                    return Ok(should_save);
+                }
+                Err(err) => {
+                    return Err(err);
+                }
+                _ => {}
+            }
         }
     }
 }
 
-fn handle_input(app: &mut App, key_event: KeyEvent) -> Option<bool> {
-    let mut result: Option<bool> = None;
+/// Interpreting `Ok` return values
+/// - `None` - continue running the app
+/// - `Some(bool)` - Exit the app, the bool value
+/// indicates whether changes should be saved
+fn handle_input(app: &mut App, key_event: KeyEvent) -> Result<Option<bool>, AppError> {
     if key_event.kind == event::KeyEventKind::Release {
-        return result;
         // we only want to listen to `Press` events
+        return Ok(None);
     }
 
     let matching_key_bind_res = app
@@ -98,10 +109,10 @@ fn handle_input(app: &mut App, key_event: KeyEvent) -> Option<bool> {
     if let Some((_, action)) = matching_key_bind_res {
         match action {
             InputAction::ExitYesSave => {
-                result = Some(true);
+                return Ok(Some(true));
             }
             InputAction::ExitNoSave => {
-                result = Some(false);
+                return Ok(Some(false));
             }
             InputAction::ExitCancel => {
                 app.goto_screen(AppScreen::Main);
@@ -226,17 +237,15 @@ fn handle_input(app: &mut App, key_event: KeyEvent) -> Option<bool> {
             }
             InputAction::CursorSelect => {
                 if let Some(selected_index) = app.list_ui_state.selected() {
-                    match app.open_item_edit(selected_index) {
-                        Err(_) => return Some(false),
-                        Ok(_) => {}
-                    }
+                    app.open_item_edit(selected_index)
+                        .map_err(AppError::FailedToOpenPairEdit)?;
                 }
             }
             InputAction::RequestPairDelete => {
                 if let Some(selected_index) = app.list_ui_state.selected() {
                     let entry = match app.pairs.get_index_entry(selected_index) {
                         Some(entry) => entry,
-                        None => return Some(false),
+                        None => return Err(AppError::NoEntryAtIndex(selected_index)),
                     };
                     let key = entry.key();
 
@@ -272,5 +281,5 @@ fn handle_input(app: &mut App, key_event: KeyEvent) -> Option<bool> {
         }
     };
 
-    result
+    Ok(None)
 }
