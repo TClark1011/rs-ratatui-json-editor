@@ -11,9 +11,10 @@
 - [x] control hints for list navigation, selection, deletion (must only show up when needed)
 - [x] numbers
 - [x] booleans
-- [ ] null
+- [x] null
 - [ ] value input validation (can probably be done using serde_json)
 - [ ] exit confirmation
+- [ ] JSON preview
 
 # Maybe Future
 

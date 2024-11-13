@@ -86,6 +86,7 @@ pub enum JsonValueType {
     Number,
     String,
     Boolean,
+    Null,
 }
 
 impl Display for JsonValueType {
@@ -94,6 +95,7 @@ impl Display for JsonValueType {
             JsonValueType::Number => write!(f, "Number"),
             JsonValueType::String => write!(f, "String"),
             JsonValueType::Boolean => write!(f, "Boolean"),
+            JsonValueType::Null => write!(f, "null"),
         }
     }
 }
@@ -102,6 +104,7 @@ pub enum JsonValue {
     Number(f64),
     String(String),
     Boolean(bool),
+    Null,
 }
 
 impl JsonValue {
@@ -110,6 +113,7 @@ impl JsonValue {
             serde_json::Value::Number(n) => Ok(JsonValue::Number(n.as_f64().unwrap_or(0.0))),
             serde_json::Value::String(s) => Ok(JsonValue::String(s)),
             serde_json::Value::Bool(b) => Ok(JsonValue::Boolean(b)),
+            serde_json::Value::Null => Ok(JsonValue::Null),
             _ => Err(JsonValueFromSerdeError::UnsupportedType),
         }
     }
@@ -132,6 +136,7 @@ impl serde::Serialize for JsonValue {
             }
             JsonValue::String(s) => serializer.serialize_str(s),
             JsonValue::Boolean(b) => serializer.serialize_bool(*b),
+            JsonValue::Null => serializer.serialize_none(),
         }
     }
 }
@@ -154,6 +159,15 @@ pub struct App {
 }
 
 impl App {
+    pub fn get_value_type_vec() -> Vec<JsonValueType> {
+        vec![
+            JsonValueType::String,
+            JsonValueType::Number,
+            JsonValueType::Boolean,
+            JsonValueType::Null,
+        ]
+    }
+
     pub fn new(input_file_path: Option<String>) -> Result<App, AppError> {
         let input_file_contents = input_file_path
             .clone()
@@ -293,7 +307,13 @@ impl App {
             JsonValueType::Boolean => {
                 self.value_input = "false".to_string();
             }
-            _ => {
+            JsonValueType::Null => {
+                self.value_input = "null".to_string();
+            }
+            JsonValueType::String => {
+                self.value_input = "".to_string();
+            }
+            JsonValueType::Number => {
                 self.value_input = "".to_string();
             }
         }
@@ -309,6 +329,7 @@ impl App {
                     JsonValue::Boolean(self.value_input.parse().unwrap_or(false))
                 }
                 JsonValueType::String => JsonValue::String(self.value_input.clone()),
+                JsonValueType::Null => JsonValue::Null,
             },
         );
     }
@@ -325,16 +346,11 @@ impl App {
             // Some(key, JsonValue::String(value)) => {}
             Some((key, json_value)) => {
                 self.key_input = key.clone();
-                match json_value {
-                    JsonValue::String(value) => {
-                        self.value_input = value.clone();
-                    }
-                    JsonValue::Boolean(bool) => {
-                        self.value_input = bool.to_string();
-                    }
-                    JsonValue::Number(number) => {
-                        self.value_input = number.to_string();
-                    }
+                self.value_input = match json_value {
+                    JsonValue::String(value) => value.clone(),
+                    JsonValue::Null => "null".to_string(),
+                    JsonValue::Boolean(value) => value.to_string(),
+                    JsonValue::Number(value) => value.to_string(),
                 };
                 self.goto_screen(AppScreen::Editing);
                 self.currently_editing = Some(CurrentlyEditing::Value);
@@ -346,14 +362,6 @@ impl App {
 
     pub fn serialize(&self) -> serde_json::Result<String> {
         serde_json::to_string(&self.pairs)
-    }
-
-    pub fn get_value_type_vec() -> Vec<JsonValueType> {
-        vec![
-            JsonValueType::String,
-            JsonValueType::Number,
-            JsonValueType::Boolean,
-        ]
     }
 
     pub fn write(&self) -> Result<(), AppError> {

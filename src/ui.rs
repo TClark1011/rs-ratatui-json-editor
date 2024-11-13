@@ -73,6 +73,7 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
                         JsonValue::String(s) => format!("\"{}\"", s),
                         JsonValue::Boolean(b) => format!("{}", b),
                         JsonValue::Number(n) => format!("{}", n),
+                        JsonValue::Null => "null".to_string(),
                     },
                     None => "null".to_string(),
                 }
@@ -164,6 +165,7 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
                 JsonValueType::String => "String",
                 JsonValueType::Boolean => "Boolean",
                 JsonValueType::Number => "Number",
+                JsonValueType::Null => "null",
             })
             .block(type_block);
             frame.render_widget(type_text, popup_vertical_panels[1]);
