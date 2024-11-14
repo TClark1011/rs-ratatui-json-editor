@@ -3,3 +3,5 @@
 # Mac OS exclusive file
 .DS_Store 
 
+*.tmp
+

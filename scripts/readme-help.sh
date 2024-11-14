@@ -19,3 +19,6 @@ awk -v start_marker="$START_MARKER" -v end_marker="$END_MARKER" '
 
 # Remove the temporary file
 rm help_output.tmp
+
+# Add README changes to the commit
+git add README.md
