@@ -13,6 +13,7 @@ pub enum AppScreen {
     Main,
     Editing,
     Exiting,
+    Preview,
 }
 
 pub enum CurrentlyEditing {
@@ -43,6 +44,8 @@ pub enum InputAction {
     RequestPairDelete,
     DeleteYes,
     DeleteNo,
+    ExitPreview,
+    Preview,
 }
 
 impl InputAction {
@@ -61,6 +64,8 @@ impl InputAction {
             InputAction::RequestPairDelete => Some("delete"),
             InputAction::DeleteYes => Some("yes"),
             InputAction::DeleteNo => Some("no"),
+            InputAction::ExitPreview => Some("exit"),
+            InputAction::Preview => Some("preview"),
             _ => None,
         }
     }
@@ -253,6 +258,7 @@ impl App {
                     let mut result = vec![
                         (KeyCode::Char('e'), InputAction::OpenNewPairPopup),
                         (KeyCode::Char('q'), InputAction::Quit),
+                        (KeyCode::Char('p'), InputAction::Preview),
                     ];
 
                     if !self.pairs.is_empty() && !delete_modal_is_open {
@@ -299,6 +305,7 @@ impl App {
                 (KeyCode::Char('n'), InputAction::ExitNoSave),
                 (KeyCode::Esc, InputAction::ExitCancel),
             ],
+            AppScreen::Preview => vec![(KeyCode::Esc, InputAction::ExitPreview)],
         };
     }
 

@@ -28,7 +28,10 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
         .style(Style::default());
 
     let title = Paragraph::new(Text::styled(
-        "Create New Json",
+        match app.get_current_screen() {
+            AppScreen::Preview => "Preview",
+            _ => "JSON Editor",
+        },
         Style::default().fg(Color::Green),
     ))
     .block(title_block);
@@ -199,6 +202,16 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
                 &mut app.type_list_ui_state,
             );
         }
+    }
+
+    //# Preview Screen
+    if let AppScreen::Preview = app.get_current_screen() {
+        let serialized = serde_json::to_string_pretty(&app.pairs).unwrap();
+
+        let text = Paragraph::new(serialized);
+
+        frame.render_widget(Clear, vertical_panels[1]);
+        frame.render_widget(text, vertical_panels[1]);
     }
 
     //# Exit Popup

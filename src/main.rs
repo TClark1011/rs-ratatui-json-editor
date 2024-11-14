@@ -261,6 +261,12 @@ fn handle_input(app: &mut App, key_event: KeyEvent) -> Result<Option<bool>, AppE
             InputAction::DeleteNo => {
                 app.target_delete_key = None;
             }
+            InputAction::Preview => {
+                app.goto_screen(AppScreen::Preview);
+            }
+            InputAction::ExitPreview => {
+                app.goto_screen(AppScreen::Main);
+            }
         }
     } else if let AppScreen::Editing = app.get_current_screen() {
         // Special case for typing into the inputs
