@@ -14,7 +14,7 @@
 - [x] null
 - [ ] value input validation (can probably be done using serde_json)
 - [ ] exit confirmation
-- [ ] JSON preview
+- [x] JSON preview
 
 # Maybe Future
 

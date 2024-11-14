@@ -22,6 +22,7 @@ pub enum CurrentlyEditing {
     Type,
 }
 
+#[derive(Clone, Copy)]
 pub enum InputAction {
     Quit,
     ExitYesSave,
@@ -46,6 +47,23 @@ pub enum InputAction {
     DeleteNo,
     ExitPreview,
     Preview,
+    EnterKeyText,
+    EnterValueText,
+}
+
+#[derive(Clone, Copy)]
+pub enum Binding {
+    Static(KeyCode),
+    TextEntry,
+}
+
+impl Display for Binding {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            Binding::Static(key_code) => write!(f, "{key_code}"),
+            Binding::TextEntry => write!(f, "Text Entry"),
+        }
+    }
 }
 
 impl InputAction {
@@ -71,7 +89,7 @@ impl InputAction {
     }
 }
 
-pub type KeyBinding = (KeyCode, InputAction);
+pub type ActionBinding = (Binding, InputAction);
 
 #[derive(Debug)]
 pub enum OpenItemEditError {
@@ -153,7 +171,7 @@ pub struct App {
     pub value_input: String,
     pub pairs: JsonData,
     pub currently_editing: Option<CurrentlyEditing>,
-    pub available_bindings: Vec<KeyBinding>,
+    pub available_bindings: Vec<ActionBinding>,
     pub list_ui_state: ListState,
     pub selected_value_type: JsonValueType,
     pub type_list_ui_state: ListState,
@@ -251,24 +269,30 @@ impl App {
                 let delete_modal_is_open = self.target_delete_key.is_some();
                 if delete_modal_is_open {
                     vec![
-                        (KeyCode::Char('y'), InputAction::DeleteYes),
-                        (KeyCode::Char('n'), InputAction::DeleteNo),
+                        (Binding::Static(KeyCode::Char('y')), InputAction::DeleteYes),
+                        (Binding::Static(KeyCode::Char('n')), InputAction::DeleteNo),
                     ]
                 } else {
                     let mut result = vec![
-                        (KeyCode::Char('e'), InputAction::OpenNewPairPopup),
-                        (KeyCode::Char('q'), InputAction::Quit),
-                        (KeyCode::Char('p'), InputAction::Preview),
+                        (
+                            Binding::Static(KeyCode::Char('e')),
+                            InputAction::OpenNewPairPopup,
+                        ),
+                        (Binding::Static(KeyCode::Char('q')), InputAction::Quit),
+                        (Binding::Static(KeyCode::Char('p')), InputAction::Preview),
                     ];
 
                     if !self.pairs.is_empty() && !delete_modal_is_open {
-                        result.push((KeyCode::Enter, InputAction::CursorSelect));
-                        result.push((KeyCode::Down, InputAction::CursorDown));
-                        result.push((KeyCode::Up, InputAction::CursorUp));
+                        result.push((Binding::Static(KeyCode::Enter), InputAction::CursorSelect));
+                        result.push((Binding::Static(KeyCode::Down), InputAction::CursorDown));
+                        result.push((Binding::Static(KeyCode::Up), InputAction::CursorUp));
 
                         if self.list_ui_state.selected().is_some() {
-                            result.push((KeyCode::Esc, InputAction::CursorCancel));
-                            result.push((KeyCode::Backspace, InputAction::RequestPairDelete));
+                            result.push((Binding::Static(KeyCode::Esc), InputAction::CursorCancel));
+                            result.push((
+                                Binding::Static(KeyCode::Backspace),
+                                InputAction::RequestPairDelete,
+                            ));
                         }
                     }
 
@@ -282,30 +306,50 @@ impl App {
                     self.type_list_ui_state.select_first();
                 }
                 let mut result = vec![
-                    (KeyCode::Enter, InputAction::EditingSubmit),
-                    (KeyCode::Tab, InputAction::EditingToggleField),
-                    (KeyCode::Esc, InputAction::EditingCancel),
-                    (KeyCode::Backspace, InputAction::EditingBackspace),
-                    (KeyCode::Up, InputAction::EditingUp),
-                    (KeyCode::Down, InputAction::EditingDown),
-                    (KeyCode::Left, InputAction::EditingLeft),
-                    (KeyCode::Right, InputAction::EditingRight),
+                    (Binding::Static(KeyCode::Enter), InputAction::EditingSubmit),
+                    (
+                        Binding::Static(KeyCode::Tab),
+                        InputAction::EditingToggleField,
+                    ),
+                    (Binding::Static(KeyCode::Esc), InputAction::EditingCancel),
+                    (
+                        Binding::Static(KeyCode::Backspace),
+                        InputAction::EditingBackspace,
+                    ),
+                    (Binding::Static(KeyCode::Up), InputAction::EditingUp),
+                    (Binding::Static(KeyCode::Down), InputAction::EditingDown),
+                    (Binding::Static(KeyCode::Left), InputAction::EditingLeft),
+                    (Binding::Static(KeyCode::Right), InputAction::EditingRight),
                 ];
 
-                if let JsonValueType::Boolean = self.selected_value_type {
-                    if let Some(CurrentlyEditing::Value) = self.currently_editing {
-                        result.push((KeyCode::Char(' '), InputAction::EditingBoolToggle));
+                match self.currently_editing {
+                    Some(CurrentlyEditing::Value) => {
+                        result.push((Binding::TextEntry, InputAction::EnterValueText));
+
+                        if let JsonValueType::Boolean = self.selected_value_type {
+                            result.push((
+                                Binding::Static(KeyCode::Char('t')),
+                                InputAction::EditingBoolToggle,
+                            ));
+                        }
                     }
+                    Some(CurrentlyEditing::Key) => {
+                        result.push((Binding::TextEntry, InputAction::EnterKeyText));
+                    }
+                    _ => {}
                 }
 
                 result
             }
             AppScreen::Exiting => vec![
-                (KeyCode::Char('y'), InputAction::ExitYesSave),
-                (KeyCode::Char('n'), InputAction::ExitNoSave),
-                (KeyCode::Esc, InputAction::ExitCancel),
+                (
+                    Binding::Static(KeyCode::Char('y')),
+                    InputAction::ExitYesSave,
+                ),
+                (Binding::Static(KeyCode::Char('n')), InputAction::ExitNoSave),
+                (Binding::Static(KeyCode::Esc), InputAction::ExitCancel),
             ],
-            AppScreen::Preview => vec![(KeyCode::Esc, InputAction::ExitPreview)],
+            AppScreen::Preview => vec![(Binding::Static(KeyCode::Esc), InputAction::ExitPreview)],
         };
     }
 

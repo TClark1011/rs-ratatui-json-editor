@@ -1,6 +1,6 @@
 use std::{error::Error, io};
 
-use app::{App, AppError, AppScreen, CurrentlyEditing, InputAction};
+use app::{ActionBinding, App, AppError, AppScreen, Binding, CurrentlyEditing, InputAction};
 use clap::Parser;
 use ratatui::crossterm::event::{
     self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent,
@@ -101,13 +101,47 @@ fn handle_input(app: &mut App, key_event: KeyEvent) -> Result<Option<bool>, AppE
         return Ok(None);
     }
 
-    let matching_key_bind_res = app
-        .available_bindings
-        .iter()
-        .find(|(key_code, _)| key_code == &key_event.code);
+    let mut text_entry_action: Option<InputAction> = None;
+    let mut matching_action_binding_res: Option<ActionBinding> = None;
 
-    if let Some((_, action)) = matching_key_bind_res {
+    for (binding, action) in app.available_bindings.iter() {
+        match binding {
+            Binding::Static(key_code) => {
+                if key_code == &key_event.code {
+                    matching_action_binding_res = Some((*binding, *action));
+                    break;
+                }
+            }
+            Binding::TextEntry => {
+                if let KeyCode::Char(_) = key_event.code {
+                    text_entry_action = Some(*action);
+                }
+            }
+        }
+    }
+
+    // We only want to use the text entry binding if no binding
+    // was found for the current key event
+    matching_action_binding_res = matching_action_binding_res.or_else(|| {
+        if let Some(action) = text_entry_action {
+            Some((Binding::TextEntry, action))
+        } else {
+            None
+        }
+    });
+
+    if let Some((_, action)) = matching_action_binding_res {
         match action {
+            InputAction::EnterKeyText => {
+                if let KeyCode::Char(character) = key_event.code {
+                    app.key_input.push(character)
+                }
+            }
+            InputAction::EnterValueText => {
+                if let KeyCode::Char(character) = key_event.code {
+                    app.value_input.push(character)
+                }
+            }
             InputAction::ExitYesSave => {
                 return Ok(Some(true));
             }
@@ -266,23 +300,6 @@ fn handle_input(app: &mut App, key_event: KeyEvent) -> Result<Option<bool>, AppE
             }
             InputAction::ExitPreview => {
                 app.goto_screen(AppScreen::Main);
-            }
-        }
-    } else if let AppScreen::Editing = app.get_current_screen() {
-        // Special case for typing into the inputs
-        if let KeyCode::Char(character) = key_event.code {
-            match app.currently_editing {
-                Some(CurrentlyEditing::Key) => app.key_input.push(character),
-                Some(CurrentlyEditing::Value) => match app.selected_value_type {
-                    app::JsonValueType::String => app.value_input.push(character),
-                    app::JsonValueType::Number => {
-                        if character.is_numeric() || character == '.' {
-                            app.value_input.push(character);
-                        }
-                    }
-                    _ => {}
-                },
-                _ => {}
             }
         }
     };

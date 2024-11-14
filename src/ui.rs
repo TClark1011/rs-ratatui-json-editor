@@ -7,7 +7,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, AppScreen, CurrentlyEditing, JsonValue, JsonValueType};
+use crate::app::{App, AppScreen, Binding, CurrentlyEditing, JsonValue, JsonValueType};
 
 const COLOR_ACCENT: Color = Color::LightYellow;
 const COLOR_SURFACE: Color = Color::DarkGray;
@@ -44,9 +44,9 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
             " {}",
             app.available_bindings
                 .iter()
-                .filter_map(|(key_code, action)| {
-                    let key_label = match key_code {
-                        KeyCode::Enter => "Enter",
+                .filter_map(|(binding, action)| {
+                    let key_label = match binding {
+                        Binding::Static(KeyCode::Enter) => "Enter",
                         kc => &format!("{kc}"),
                     };
 
