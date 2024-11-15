@@ -435,10 +435,13 @@ impl serde::Serialize for JsonValue {
         match self {
             JsonValue::Number(n) => {
                 if n.fract() != 0.0 {
+                    // if it is not a whole number serialize as float
                     serializer.serialize_f64(*n)
                 } else if *n < 0.0 {
+                    // if its negative serialize as a signed integer
                     serializer.serialize_i64(*n as i64)
                 } else {
+                    // if its positive serialize as an unsigned integer
                     serializer.serialize_u64(*n as u64)
                 }
             }
