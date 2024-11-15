@@ -1,6 +1,8 @@
 use std::{error::Error, io};
 
-use app::{ActionBinding, App, AppError, AppScreen, Binding, CurrentlyEditing, InputAction};
+use app::{
+    ActionBinding, App, AppError, AppScreen, Binding, CurrentlyEditing, InputAction, TextField,
+};
 use clap::Parser;
 use ratatui::crossterm::event::{
     self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent,
@@ -74,7 +76,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<bool
     loop {
         app.update_state();
         terminal
-            .draw(|frame| ui(frame, app))
+            .try_draw(|frame| ui(frame, app))
             .map_err(AppError::FailedToDraw)?;
 
         if let Event::Key(key_event) = event::read().map_err(AppError::FailedToReadEvent)? {
@@ -132,16 +134,26 @@ fn handle_input(app: &mut App, key_event: KeyEvent) -> Result<Option<bool>, AppE
 
     if let Some((_, action)) = matching_action_binding_res {
         match action {
-            InputAction::EnterKeyText => {
+            InputAction::EnterFieldText(field) => {
                 if let KeyCode::Char(character) = key_event.code {
-                    app.key_input.push(character)
+                    match field {
+                        TextField::Value => {
+                            app.value_input.push(character);
+                        }
+                        TextField::Key => {
+                            app.key_input.push(character);
+                        }
+                    }
                 }
             }
-            InputAction::EnterValueText => {
-                if let KeyCode::Char(character) = key_event.code {
-                    app.value_input.push(character)
+            InputAction::BackspaceFieldText(field) => match field {
+                TextField::Key => {
+                    app.key_input.pop();
                 }
-            }
+                TextField::Value => {
+                    app.value_input.pop();
+                }
+            },
             InputAction::ExitYesSave => {
                 return Ok(Some(true));
             }
@@ -182,7 +194,7 @@ fn handle_input(app: &mut App, key_event: KeyEvent) -> Result<Option<bool>, AppE
                     if let Some(selected_index) = app.type_list_ui_state.selected() {
                         app.type_list_open = false;
 
-                        let value_types = App::get_value_type_vec();
+                        let value_types = App::all_value_types();
                         let corresponding_json_type = value_types.get(selected_index).unwrap();
                         app.select_value_type(*corresponding_json_type);
                     }
@@ -203,15 +215,6 @@ fn handle_input(app: &mut App, key_event: KeyEvent) -> Result<Option<bool>, AppE
                     };
                 }
             }
-            InputAction::EditingBackspace => match app.currently_editing {
-                Some(CurrentlyEditing::Key) => {
-                    app.key_input.pop();
-                }
-                Some(CurrentlyEditing::Value) => {
-                    app.value_input.pop();
-                }
-                _ => {}
-            },
             InputAction::EditingLeft => match app.currently_editing {
                 Some(CurrentlyEditing::Value) => {
                     app.currently_editing = Some(CurrentlyEditing::Key);

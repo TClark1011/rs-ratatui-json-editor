@@ -9,163 +9,6 @@ use std::{
 use indexmap::IndexMap;
 use ratatui::{crossterm::event::KeyCode, widgets::ListState};
 
-pub enum AppScreen {
-    Main,
-    Editing,
-    Exiting,
-    Preview,
-}
-
-pub enum CurrentlyEditing {
-    Key,
-    Value,
-    Type,
-}
-
-#[derive(Clone, Copy)]
-pub enum InputAction {
-    Quit,
-    ExitYesSave,
-    ExitNoSave,
-    ExitCancel,
-    OpenNewPairPopup,
-    EditingSubmit,
-    EditingCancel,
-    EditingToggleField,
-    EditingBackspace,
-    EditingUp,
-    EditingDown,
-    EditingLeft,
-    EditingRight,
-    EditingBoolToggle,
-    CursorUp,
-    CursorDown,
-    CursorCancel,
-    CursorSelect,
-    RequestPairDelete,
-    DeleteYes,
-    DeleteNo,
-    ExitPreview,
-    Preview,
-    EnterKeyText,
-    EnterValueText,
-}
-
-#[derive(Clone, Copy)]
-pub enum Binding {
-    Static(KeyCode),
-    TextEntry,
-}
-
-impl Display for Binding {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        match self {
-            Binding::Static(key_code) => write!(f, "{key_code}"),
-            Binding::TextEntry => write!(f, "Text Entry"),
-        }
-    }
-}
-
-impl InputAction {
-    pub fn description(&self) -> Option<&str> {
-        match self {
-            InputAction::OpenNewPairPopup => Some("new"),
-            InputAction::Quit => Some("quit"),
-            InputAction::EditingCancel => Some("cancel"),
-            InputAction::EditingToggleField => Some("switch"),
-            InputAction::EditingSubmit => Some("submit"),
-            InputAction::CursorSelect => Some("select"),
-            InputAction::CursorDown => Some("down"),
-            InputAction::CursorUp => Some("up"),
-            InputAction::CursorCancel => Some("cancel"),
-            InputAction::EditingBoolToggle => Some("toggle"),
-            InputAction::RequestPairDelete => Some("delete"),
-            InputAction::DeleteYes => Some("yes"),
-            InputAction::DeleteNo => Some("no"),
-            InputAction::ExitPreview => Some("exit"),
-            InputAction::Preview => Some("preview"),
-            _ => None,
-        }
-    }
-}
-
-pub type ActionBinding = (Binding, InputAction);
-
-#[derive(Debug)]
-pub enum OpenItemEditError {
-    InvalidIndex(usize),
-}
-
-impl Display for OpenItemEditError {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        match self {
-            OpenItemEditError::InvalidIndex(idx) => write!(f, "Invalid index {idx}"),
-        }
-    }
-}
-
-#[derive(Clone, Copy)]
-pub enum JsonValueType {
-    Number,
-    String,
-    Boolean,
-    Null,
-}
-
-impl Display for JsonValueType {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        match self {
-            JsonValueType::Number => write!(f, "Number"),
-            JsonValueType::String => write!(f, "String"),
-            JsonValueType::Boolean => write!(f, "Boolean"),
-            JsonValueType::Null => write!(f, "null"),
-        }
-    }
-}
-
-pub enum JsonValue {
-    Number(f64),
-    String(String),
-    Boolean(bool),
-    Null,
-}
-
-impl JsonValue {
-    pub fn from_serde(serde_value: serde_json::Value) -> Result<Self, JsonValueFromSerdeError> {
-        match serde_value {
-            serde_json::Value::Number(n) => Ok(JsonValue::Number(n.as_f64().unwrap_or(0.0))),
-            serde_json::Value::String(s) => Ok(JsonValue::String(s)),
-            serde_json::Value::Bool(b) => Ok(JsonValue::Boolean(b)),
-            serde_json::Value::Null => Ok(JsonValue::Null),
-            _ => Err(JsonValueFromSerdeError::UnsupportedType),
-        }
-    }
-}
-
-impl serde::Serialize for JsonValue {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        match self {
-            JsonValue::Number(n) => {
-                if n.fract() != 0.0 {
-                    serializer.serialize_f64(*n)
-                } else if *n < 0.0 {
-                    serializer.serialize_i64(*n as i64)
-                } else {
-                    serializer.serialize_u64(*n as u64)
-                }
-            }
-            JsonValue::String(s) => serializer.serialize_str(s),
-            JsonValue::Boolean(b) => serializer.serialize_bool(*b),
-            JsonValue::Null => serializer.serialize_none(),
-        }
-    }
-}
-
-type JsonData = IndexMap<String, JsonValue>;
-
 pub struct App {
     pub key_input: String,
     pub value_input: String,
@@ -182,7 +25,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn get_value_type_vec() -> Vec<JsonValueType> {
+    pub fn all_value_types() -> Vec<JsonValueType> {
         vec![
             JsonValueType::String,
             JsonValueType::Number,
@@ -312,10 +155,6 @@ impl App {
                         InputAction::EditingToggleField,
                     ),
                     (Binding::Static(KeyCode::Esc), InputAction::EditingCancel),
-                    (
-                        Binding::Static(KeyCode::Backspace),
-                        InputAction::EditingBackspace,
-                    ),
                     (Binding::Static(KeyCode::Up), InputAction::EditingUp),
                     (Binding::Static(KeyCode::Down), InputAction::EditingDown),
                     (Binding::Static(KeyCode::Left), InputAction::EditingLeft),
@@ -324,7 +163,14 @@ impl App {
 
                 match self.currently_editing {
                     Some(CurrentlyEditing::Value) => {
-                        result.push((Binding::TextEntry, InputAction::EnterValueText));
+                        result.push((
+                            Binding::Static(KeyCode::Backspace),
+                            InputAction::BackspaceFieldText(TextField::Value),
+                        ));
+                        result.push((
+                            Binding::TextEntry,
+                            InputAction::EnterFieldText(TextField::Value),
+                        ));
 
                         if let JsonValueType::Boolean = self.selected_value_type {
                             result.push((
@@ -334,7 +180,14 @@ impl App {
                         }
                     }
                     Some(CurrentlyEditing::Key) => {
-                        result.push((Binding::TextEntry, InputAction::EnterKeyText));
+                        result.push((
+                            Binding::Static(KeyCode::Backspace),
+                            InputAction::BackspaceFieldText(TextField::Key),
+                        ));
+                        result.push((
+                            Binding::TextEntry,
+                            InputAction::EnterFieldText(TextField::Key),
+                        ));
                     }
                     _ => {}
                 }
@@ -435,6 +288,169 @@ impl App {
     }
 }
 
+pub enum AppScreen {
+    Main,
+    Editing,
+    Exiting,
+    Preview,
+}
+
+pub enum CurrentlyEditing {
+    Key,
+    Value,
+    Type,
+}
+
+#[derive(Clone, Copy)]
+pub enum TextField {
+    Key,
+    Value,
+}
+
+#[derive(Clone, Copy)]
+pub enum InputAction {
+    Quit,
+    ExitYesSave,
+    ExitNoSave,
+    ExitCancel,
+    OpenNewPairPopup,
+    EditingSubmit,
+    EditingCancel,
+    EditingToggleField,
+    EditingUp,
+    EditingDown,
+    EditingLeft,
+    EditingRight,
+    EditingBoolToggle,
+    CursorUp,
+    CursorDown,
+    CursorCancel,
+    CursorSelect,
+    RequestPairDelete,
+    DeleteYes,
+    DeleteNo,
+    ExitPreview,
+    Preview,
+    EnterFieldText(TextField),
+    BackspaceFieldText(TextField),
+}
+
+#[derive(Clone, Copy)]
+pub enum Binding {
+    Static(KeyCode),
+    TextEntry,
+}
+
+impl Display for Binding {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            Binding::Static(key_code) => write!(f, "{key_code}"),
+            Binding::TextEntry => write!(f, "Text Entry"),
+        }
+    }
+}
+
+impl InputAction {
+    pub fn description(&self) -> Option<&str> {
+        match self {
+            InputAction::OpenNewPairPopup => Some("new"),
+            InputAction::Quit => Some("quit"),
+            InputAction::EditingCancel => Some("cancel"),
+            InputAction::EditingToggleField => Some("switch"),
+            InputAction::EditingSubmit => Some("submit"),
+            InputAction::CursorSelect => Some("select"),
+            InputAction::CursorDown => Some("down"),
+            InputAction::CursorUp => Some("up"),
+            InputAction::CursorCancel => Some("cancel"),
+            InputAction::EditingBoolToggle => Some("toggle"),
+            InputAction::RequestPairDelete => Some("delete"),
+            InputAction::DeleteYes => Some("yes"),
+            InputAction::DeleteNo => Some("no"),
+            InputAction::ExitPreview => Some("exit"),
+            InputAction::Preview => Some("preview"),
+            _ => None,
+        }
+    }
+}
+
+pub type ActionBinding = (Binding, InputAction);
+
+#[derive(Debug)]
+pub enum OpenItemEditError {
+    InvalidIndex(usize),
+}
+
+impl Display for OpenItemEditError {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            OpenItemEditError::InvalidIndex(idx) => write!(f, "Invalid index {idx}"),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub enum JsonValueType {
+    Number,
+    String,
+    Boolean,
+    Null,
+}
+
+impl Display for JsonValueType {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            JsonValueType::Number => write!(f, "Number"),
+            JsonValueType::String => write!(f, "String"),
+            JsonValueType::Boolean => write!(f, "Boolean"),
+            JsonValueType::Null => write!(f, "null"),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum JsonValue {
+    Number(f64),
+    String(String),
+    Boolean(bool),
+    Null,
+}
+
+impl JsonValue {
+    pub fn from_serde(serde_value: serde_json::Value) -> Result<Self, JsonValueFromSerdeError> {
+        match serde_value {
+            serde_json::Value::Number(n) => Ok(JsonValue::Number(n.as_f64().unwrap_or(0.0))),
+            serde_json::Value::String(s) => Ok(JsonValue::String(s)),
+            serde_json::Value::Bool(b) => Ok(JsonValue::Boolean(b)),
+            serde_json::Value::Null => Ok(JsonValue::Null),
+            _ => Err(JsonValueFromSerdeError::UnsupportedType),
+        }
+    }
+}
+
+impl serde::Serialize for JsonValue {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            JsonValue::Number(n) => {
+                if n.fract() != 0.0 {
+                    serializer.serialize_f64(*n)
+                } else if *n < 0.0 {
+                    serializer.serialize_i64(*n as i64)
+                } else {
+                    serializer.serialize_u64(*n as u64)
+                }
+            }
+            JsonValue::String(s) => serializer.serialize_str(s),
+            JsonValue::Boolean(b) => serializer.serialize_bool(*b),
+            JsonValue::Null => serializer.serialize_none(),
+        }
+    }
+}
+
+pub type JsonData = IndexMap<String, JsonValue>;
+
 #[derive(Debug)]
 pub enum AppError {
     InputFileNotFound(String),
@@ -462,14 +478,7 @@ impl Display for AppError {
     }
 }
 
-impl std::error::Error for AppError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            AppError::UnableToSave(e) => Some(e),
-            _ => None,
-        }
-    }
-}
+impl std::error::Error for AppError {}
 
 pub enum JsonValueFromSerdeError {
     UnsupportedType,
