@@ -1,7 +1,7 @@
 use std::{error::Error, io};
 
 use app::{
-    ActionBinding, App, AppError, AppScreen, Binding, CurrentlyEditing, InputAction, TextField,
+    ActionBinding, App, AppError, AppScreen, Binding, EditFocus, ExitFocus, InputAction, TextField,
 };
 use clap::Parser;
 use ratatui::crossterm::event::{
@@ -143,6 +143,15 @@ fn handle_input(app: &mut App, key_event: KeyEvent) -> Result<Option<bool>, AppE
                         TextField::Key => {
                             app.key_input.push(character);
                         }
+                        TextField::OutputFile => {
+                            app.target_write_file = match app.target_write_file.clone() {
+                                Some(mut file_path) => {
+                                    file_path.push(character);
+                                    Some(file_path)
+                                }
+                                None => Some(character.to_string()),
+                            }
+                        }
                     }
                 }
             }
@@ -153,13 +162,26 @@ fn handle_input(app: &mut App, key_event: KeyEvent) -> Result<Option<bool>, AppE
                 TextField::Value => {
                     app.value_input.pop();
                 }
+                TextField::OutputFile => {
+                    app.target_write_file = match app.target_write_file.clone() {
+                        Some(mut file_path) => {
+                            file_path.pop();
+                            if file_path.is_empty() {
+                                None
+                            } else {
+                                Some(file_path)
+                            }
+                        }
+                        None => None,
+                    }
+                }
             },
-            InputAction::ExitYesSave => {
-                return Ok(Some(true));
-            }
-            InputAction::ExitNoSave => {
-                return Ok(Some(false));
-            }
+            // InputAction::ExitYesSave => {
+            //     return Ok(Some(true));
+            // }
+            // InputAction::ExitNoSave => {
+            //     return Ok(Some(false));
+            // }
             InputAction::ExitCancel => {
                 app.goto_screen(AppScreen::Main);
             }
@@ -177,15 +199,15 @@ fn handle_input(app: &mut App, key_event: KeyEvent) -> Result<Option<bool>, AppE
                     app.goto_screen(AppScreen::Main);
                 }
             }
-            InputAction::EditingToggleField => match app.currently_editing {
-                Some(CurrentlyEditing::Key) => {
-                    app.currently_editing = Some(CurrentlyEditing::Value);
+            InputAction::EditingToggleField => match app.edit_popup_focus {
+                Some(EditFocus::Key) => {
+                    app.edit_popup_focus = Some(EditFocus::Value);
                 }
-                Some(CurrentlyEditing::Value) => {
-                    app.currently_editing = Some(CurrentlyEditing::Key);
+                Some(EditFocus::Value) => {
+                    app.edit_popup_focus = Some(EditFocus::Key);
                 }
-                Some(CurrentlyEditing::Type) => {
-                    app.currently_editing = Some(CurrentlyEditing::Key);
+                Some(EditFocus::Type) => {
+                    app.edit_popup_focus = Some(EditFocus::Key);
                 }
                 None => {}
             },
@@ -199,37 +221,37 @@ fn handle_input(app: &mut App, key_event: KeyEvent) -> Result<Option<bool>, AppE
                         app.select_value_type(*corresponding_json_type);
                     }
                 } else {
-                    match app.currently_editing {
-                        Some(CurrentlyEditing::Key) => {
-                            app.currently_editing = Some(CurrentlyEditing::Value);
+                    match app.edit_popup_focus {
+                        Some(EditFocus::Key) => {
+                            app.edit_popup_focus = Some(EditFocus::Value);
                         }
-                        Some(CurrentlyEditing::Value) => {
+                        Some(EditFocus::Value) => {
                             app.save_key_value();
                             app.clear_editing_state();
                             app.goto_screen(AppScreen::Main);
                         }
-                        Some(CurrentlyEditing::Type) => {
+                        Some(EditFocus::Type) => {
                             app.type_list_open = true;
                         }
                         None => {}
                     };
                 }
             }
-            InputAction::EditingLeft => match app.currently_editing {
-                Some(CurrentlyEditing::Value) => {
-                    app.currently_editing = Some(CurrentlyEditing::Key);
+            InputAction::EditingLeft => match app.edit_popup_focus {
+                Some(EditFocus::Value) => {
+                    app.edit_popup_focus = Some(EditFocus::Key);
                 }
-                Some(CurrentlyEditing::Type) => {
-                    app.currently_editing = Some(CurrentlyEditing::Key);
+                Some(EditFocus::Type) => {
+                    app.edit_popup_focus = Some(EditFocus::Key);
                 }
                 _ => {}
             },
-            InputAction::EditingRight => match app.currently_editing {
-                Some(CurrentlyEditing::Key) => {
-                    app.currently_editing = Some(CurrentlyEditing::Value);
+            InputAction::EditingRight => match app.edit_popup_focus {
+                Some(EditFocus::Key) => {
+                    app.edit_popup_focus = Some(EditFocus::Value);
                 }
-                Some(CurrentlyEditing::Type) => {
-                    app.currently_editing = Some(CurrentlyEditing::Value);
+                Some(EditFocus::Type) => {
+                    app.edit_popup_focus = Some(EditFocus::Value);
                 }
                 _ => {}
             },
@@ -237,9 +259,9 @@ fn handle_input(app: &mut App, key_event: KeyEvent) -> Result<Option<bool>, AppE
                 if app.type_list_open {
                     app.type_list_ui_state.select_previous();
                 } else {
-                    match app.currently_editing {
-                        Some(CurrentlyEditing::Type) => {
-                            app.currently_editing = Some(CurrentlyEditing::Key);
+                    match app.edit_popup_focus {
+                        Some(EditFocus::Type) => {
+                            app.edit_popup_focus = Some(EditFocus::Key);
                         }
                         _ => {}
                     }
@@ -249,12 +271,12 @@ fn handle_input(app: &mut App, key_event: KeyEvent) -> Result<Option<bool>, AppE
                 if app.type_list_open {
                     app.type_list_ui_state.select_next();
                 } else {
-                    match app.currently_editing {
-                        Some(CurrentlyEditing::Key) => {
-                            app.currently_editing = Some(CurrentlyEditing::Type);
+                    match app.edit_popup_focus {
+                        Some(EditFocus::Key) => {
+                            app.edit_popup_focus = Some(EditFocus::Type);
                         }
-                        Some(CurrentlyEditing::Value) => {
-                            app.currently_editing = Some(CurrentlyEditing::Type);
+                        Some(EditFocus::Value) => {
+                            app.edit_popup_focus = Some(EditFocus::Type);
                         }
                         _ => {}
                     }
@@ -263,6 +285,50 @@ fn handle_input(app: &mut App, key_event: KeyEvent) -> Result<Option<bool>, AppE
             InputAction::EditingBoolToggle => {
                 app.value_input = (!(app.value_input.parse::<bool>().unwrap())).to_string();
             }
+            InputAction::ExitLeft => {
+                app.exit_popup_focus = match app.exit_popup_focus.clone() {
+                    Some(focus) => match focus {
+                        ExitFocus::Positive => Some(ExitFocus::Negative),
+                        ExitFocus::Negative => Some(ExitFocus::Positive),
+                        ExitFocus::Input => Some(ExitFocus::Input),
+                    },
+                    None => None,
+                }
+            }
+            InputAction::ExitRight => {
+                app.exit_popup_focus = match app.exit_popup_focus.clone() {
+                    Some(focus) => match focus {
+                        ExitFocus::Positive => Some(ExitFocus::Negative),
+                        ExitFocus::Negative => Some(ExitFocus::Positive),
+                        ExitFocus::Input => Some(ExitFocus::Input),
+                    },
+                    None => None,
+                }
+            }
+            InputAction::ExitUp => {
+                app.exit_popup_focus = match app.exit_popup_focus.clone() {
+                    Some(_) => Some(ExitFocus::Input),
+                    None => None,
+                }
+            }
+            InputAction::ExitDown => {
+                app.exit_popup_focus = match app.exit_popup_focus.clone() {
+                    Some(focus) => match focus {
+                        ExitFocus::Input => Some(ExitFocus::Negative),
+                        other => Some(other),
+                    },
+                    None => None,
+                }
+            }
+            InputAction::ExitCursorSelect => match app.exit_popup_focus {
+                None => {}
+                Some(ExitFocus::Negative) => {
+                    return Ok(Some(false));
+                }
+                _ => {
+                    return Ok(Some(true));
+                }
+            },
             InputAction::CursorUp => {
                 app.list_ui_state.select_previous();
             }

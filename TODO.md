@@ -1,10 +1,10 @@
 # 1.0
 
 - [x] read from file
-- [ ] write to file
+- [x] write to file
   - [x] save to input file
-  - [ ] provide output file if no input file was used
-  - [ ] provide alternate output file if input file was used
+  - [x] provide output file if no input file was used
+  - [x] provide alternate output file if input file was used
 - [x] edit items
 - [x] delete items
 - [x] basic error handling (just exit and print error message)
@@ -13,7 +13,6 @@
 - [x] booleans
 - [x] null
 - [ ] value input validation (can probably be done using serde_json)
-- [ ] exit confirmation
 - [x] JSON preview
 
 # Maybe Future

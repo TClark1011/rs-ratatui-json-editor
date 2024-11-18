@@ -9,7 +9,9 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, AppScreen, Binding, CurrentlyEditing, JsonData, JsonValue, JsonValueType};
+use crate::app::{
+    App, AppScreen, Binding, EditFocus, ExitFocus, JsonData, JsonValue, JsonValueType,
+};
 
 const COLOR_ACCENT: Color = Color::LightYellow;
 const COLOR_SURFACE: Color = Color::DarkGray;
@@ -37,7 +39,7 @@ pub fn ui(frame: &mut Frame, app: &mut App) -> Result<(), io::Error> {
         render_delete_confirm_popup(frame, target_delete_key);
     }
 
-    if app.currently_editing.is_some() {
+    if app.edit_popup_focus.is_some() {
         if !app.type_list_open {
             render_editing_popup(frame, app)?;
         } else {
@@ -54,7 +56,7 @@ pub fn ui(frame: &mut Frame, app: &mut App) -> Result<(), io::Error> {
         }
         AppScreen::Exiting => {
             frame.render_widget(Clear, frame.area()); //this clears the entire screen and anything already drawn
-            render_exit_popup(frame);
+            render_exit_popup(frame, app);
         }
         _ => {}
     }
@@ -186,10 +188,10 @@ fn render_editing_popup(frame: &mut Frame, app: &App) -> Result<(), io::Error> {
 
     let active_style = Style::default().bg(COLOR_ACCENT).fg(Color::Black);
 
-    match app.currently_editing {
-        Some(CurrentlyEditing::Key) => key_block = key_block.style(active_style),
-        Some(CurrentlyEditing::Value) => value_block = value_block.style(active_style),
-        Some(CurrentlyEditing::Type) => type_block = type_block.style(active_style),
+    match app.edit_popup_focus {
+        Some(EditFocus::Key) => key_block = key_block.style(active_style),
+        Some(EditFocus::Value) => value_block = value_block.style(active_style),
+        Some(EditFocus::Type) => type_block = type_block.style(active_style),
         None => {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -271,26 +273,91 @@ fn compose_preview_screen(app: &App) -> Result<Paragraph, io::Error> {
     }
 }
 
-fn render_exit_popup(frame: &mut Frame) {
-    let popup_block = Block::default()
-        .title(" Save?")
-        .style(Style::default().bg(COLOR_SURFACE));
+fn render_exit_popup(frame: &mut Frame, app: &App) {
+    let popup_block = Block::default().style(Style::default().bg(COLOR_SURFACE));
 
-    let exit_text = Text::styled(
-        " Would you like to save your changes before exiting? (y/n)",
-        Style::default().fg(Color::Red),
-    );
-    // the `trim: false` will stop the text from being cut off when over the edge of the block
-    let exit_paragraph = Paragraph::new(exit_text)
-        .block(popup_block)
-        .wrap(Wrap { trim: false });
+    let row_heights = [1, 3, 1];
+    let total_height = row_heights.iter().sum::<u16>();
 
     let area = compose_popup(
-        Constraint::Percentage(60),
-        Constraint::Percentage(25),
+        Constraint::Length(60),
+        Constraint::Length(total_height),
         frame.area(),
     );
-    frame.render_widget(exit_paragraph, area);
+
+    let vertical_panels = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(
+            row_heights
+                .iter()
+                .map(|h| Constraint::Length(*h))
+                .collect::<Vec<_>>(),
+        )
+        .split(area);
+
+    let exit_text = Text::styled(
+        " Would you like to save your changes before exiting?",
+        Style::default().fg(Color::Red),
+    );
+
+    let mut input_block = Block::default().title("Save To").borders(Borders::ALL);
+
+    let mut positive_button = Block::default();
+    let mut negative_button = Block::default();
+
+    let active_style = Style::default().bg(COLOR_ACCENT).fg(Color::Black);
+
+    match app.exit_popup_focus {
+        Some(ExitFocus::Input) => input_block = input_block.style(active_style),
+        Some(ExitFocus::Positive) => positive_button = positive_button.style(active_style),
+        Some(ExitFocus::Negative) => negative_button = negative_button.style(active_style),
+        None => {}
+    };
+
+    let middle_row_panels = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Fill(1),
+            Constraint::Length(40),
+            Constraint::Fill(1),
+        ])
+        .split(vertical_panels[1]);
+
+    let input_text = Paragraph::new(match app.target_write_file.clone() {
+        None => String::from(""),
+        Some(path) => path,
+    })
+    .block(input_block);
+
+    let positive_label = "save";
+    let negative_label = "discard";
+
+    let action_row_panels = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Fill(2),
+            Constraint::Length(negative_label.len() as u16 + 2),
+            Constraint::Fill(1),
+            Constraint::Length(positive_label.len() as u16 + 2),
+            Constraint::Fill(2),
+        ])
+        .split(vertical_panels[2]);
+
+    // the `trim: false` will stop the text from being cut off when over the edge of the block
+    let message = Paragraph::new(exit_text).wrap(Wrap { trim: false });
+
+    let positive_text = Paragraph::new(positive_label)
+        .block(positive_button)
+        .centered();
+    let negative_text = Paragraph::new(negative_label)
+        .block(negative_button)
+        .centered();
+
+    frame.render_widget(popup_block, area);
+    frame.render_widget(message, vertical_panels[0]);
+    frame.render_widget(input_text, middle_row_panels[1]);
+    frame.render_widget(negative_text, action_row_panels[1]);
+    frame.render_widget(positive_text, action_row_panels[3]);
 }
 
 fn compose_popup(x_constraint: Constraint, y_constraint: Constraint, r: Rect) -> Rect {

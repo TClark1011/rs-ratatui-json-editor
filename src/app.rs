@@ -13,7 +13,8 @@ pub struct App {
     pub key_input: String,
     pub value_input: String,
     pub pairs: JsonData,
-    pub currently_editing: Option<CurrentlyEditing>,
+    pub edit_popup_focus: Option<EditFocus>,
+    pub exit_popup_focus: Option<ExitFocus>,
     pub available_bindings: Vec<ActionBinding>,
     pub list_ui_state: ListState,
     pub selected_value_type: JsonValueType,
@@ -78,7 +79,8 @@ impl App {
                     key_input: String::new(),
                     value_input: String::new(),
                     pairs: data,
-                    currently_editing: None,
+                    edit_popup_focus: None,
+                    exit_popup_focus: None,
                     available_bindings: Vec::new(),
                     list_ui_state: ListState::default(),
                     current_screen: AppScreen::Main,
@@ -100,8 +102,14 @@ impl App {
     }
 
     pub fn goto_screen(&mut self, new_screen: AppScreen) {
-        if let AppScreen::Editing = new_screen {
-            self.currently_editing = Some(CurrentlyEditing::Key);
+        match new_screen {
+            AppScreen::Editing => {
+                self.edit_popup_focus = Some(EditFocus::Key);
+            }
+            AppScreen::Exiting => {
+                self.exit_popup_focus = Some(ExitFocus::Input);
+            }
+            _ => {}
         }
         self.current_screen = new_screen;
     }
@@ -161,8 +169,8 @@ impl App {
                     (Binding::Static(KeyCode::Right), InputAction::EditingRight),
                 ];
 
-                match self.currently_editing {
-                    Some(CurrentlyEditing::Value) => {
+                match self.edit_popup_focus {
+                    Some(EditFocus::Value) => {
                         result.push((
                             Binding::Static(KeyCode::Backspace),
                             InputAction::BackspaceFieldText(TextField::Value),
@@ -179,7 +187,7 @@ impl App {
                             ));
                         }
                     }
-                    Some(CurrentlyEditing::Key) => {
+                    Some(EditFocus::Key) => {
                         result.push((
                             Binding::Static(KeyCode::Backspace),
                             InputAction::BackspaceFieldText(TextField::Key),
@@ -194,14 +202,35 @@ impl App {
 
                 result
             }
-            AppScreen::Exiting => vec![
-                (
-                    Binding::Static(KeyCode::Char('y')),
-                    InputAction::ExitYesSave,
-                ),
-                (Binding::Static(KeyCode::Char('n')), InputAction::ExitNoSave),
-                (Binding::Static(KeyCode::Esc), InputAction::ExitCancel),
-            ],
+            AppScreen::Exiting => {
+                let mut result = vec![
+                    (Binding::Static(KeyCode::Esc), InputAction::ExitCancel),
+                    (Binding::Static(KeyCode::Up), InputAction::ExitUp),
+                    (Binding::Static(KeyCode::Down), InputAction::ExitDown),
+                    (Binding::Static(KeyCode::Left), InputAction::ExitLeft),
+                    (Binding::Static(KeyCode::Right), InputAction::ExitRight),
+                    (
+                        Binding::Static(KeyCode::Enter),
+                        InputAction::ExitCursorSelect,
+                    ),
+                ];
+
+                match self.exit_popup_focus {
+                    Some(ExitFocus::Input) => {
+                        result.push((
+                            Binding::Static(KeyCode::Backspace),
+                            InputAction::BackspaceFieldText(TextField::OutputFile),
+                        ));
+                        result.push((
+                            Binding::TextEntry,
+                            InputAction::EnterFieldText(TextField::OutputFile),
+                        ));
+                    }
+                    _ => {}
+                }
+
+                result
+            }
             AppScreen::Preview => vec![(Binding::Static(KeyCode::Esc), InputAction::ExitPreview)],
         };
     }
@@ -241,7 +270,7 @@ impl App {
     pub fn clear_editing_state(&mut self) {
         self.key_input.clear();
         self.value_input.clear();
-        self.currently_editing = None;
+        self.edit_popup_focus = None;
     }
 
     pub fn open_item_edit(&mut self, index: usize) -> Result<(), OpenItemEditError> {
@@ -257,7 +286,7 @@ impl App {
                     JsonValue::Number(value) => value.to_string(),
                 };
                 self.goto_screen(AppScreen::Editing);
-                self.currently_editing = Some(CurrentlyEditing::Value);
+                self.edit_popup_focus = Some(EditFocus::Value);
 
                 Ok(())
             }
@@ -295,23 +324,29 @@ pub enum AppScreen {
     Preview,
 }
 
-pub enum CurrentlyEditing {
+pub enum EditFocus {
     Key,
     Value,
     Type,
 }
 
 #[derive(Clone, Copy)]
+pub enum ExitFocus {
+    Input,
+    Positive,
+    Negative,
+}
+
+#[derive(Clone, Copy)]
 pub enum TextField {
     Key,
     Value,
+    OutputFile,
 }
 
 #[derive(Clone, Copy)]
 pub enum InputAction {
     Quit,
-    ExitYesSave,
-    ExitNoSave,
     ExitCancel,
     OpenNewPairPopup,
     EditingSubmit,
@@ -321,6 +356,11 @@ pub enum InputAction {
     EditingDown,
     EditingLeft,
     EditingRight,
+    ExitUp,
+    ExitDown,
+    ExitLeft,
+    ExitRight,
+    ExitCursorSelect,
     EditingBoolToggle,
     CursorUp,
     CursorDown,
