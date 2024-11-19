@@ -22,6 +22,7 @@ pub struct App {
     pub type_list_open: bool,
     pub target_delete_key: Option<String>,
     pub target_write_file: Option<String>,
+    pub error_fields: Vec<TextField>,
     current_screen: AppScreen,
 }
 
@@ -89,6 +90,7 @@ impl App {
                     type_list_open: false,
                     target_delete_key: None,
                     target_write_file: input_file_path,
+                    error_fields: Vec::new(),
                 };
                 result.update_state();
 
@@ -233,6 +235,42 @@ impl App {
             }
             AppScreen::Preview => vec![(Binding::Static(KeyCode::Esc), InputAction::ExitPreview)],
         };
+    }
+
+    pub fn validate_fields(&mut self) -> bool {
+        self.error_fields.clear();
+
+        let mut result: Vec<TextField> = Vec::new();
+
+        match self.current_screen {
+            AppScreen::Editing => {
+                let value_field_is_valid = match self.selected_value_type {
+                    JsonValueType::Number => self.value_input.parse::<f64>().is_ok(),
+                    JsonValueType::Boolean => self.value_input.parse::<bool>().is_ok(),
+                    JsonValueType::Null => self.value_input == "null",
+                    JsonValueType::String => true,
+                };
+                if !value_field_is_valid {
+                    result.push(TextField::Value);
+                }
+            }
+            AppScreen::Exiting => {
+                let output_path_is_valid = match self.target_write_file.clone() {
+                    Some(path) => !path.trim().is_empty(),
+                    None => false,
+                };
+
+                if !output_path_is_valid {
+                    result.push(TextField::OutputFile);
+                }
+            }
+            AppScreen::Main => {}
+            AppScreen::Preview => {}
+        }
+
+        self.error_fields = result;
+
+        self.error_fields.is_empty()
     }
 
     pub fn select_value_type(&mut self, new_type: JsonValueType) {

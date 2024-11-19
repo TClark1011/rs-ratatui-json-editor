@@ -12,12 +12,9 @@
 - [x] numbers
 - [x] booleans
 - [x] null
-- [ ] value input validation (can probably be done using serde_json)
+- [x] value input validation
 - [x] JSON preview
-
-# Maybe Future
-
 - [ ] Complex value types
   - [ ] objects
   - [ ] arrays
-- [ ] customise key bindings
+- [ ] Allow cursor in preview

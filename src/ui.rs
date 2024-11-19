@@ -10,7 +10,7 @@ use ratatui::{
 };
 
 use crate::app::{
-    App, AppScreen, Binding, EditFocus, ExitFocus, JsonData, JsonValue, JsonValueType,
+    App, AppScreen, Binding, EditFocus, ExitFocus, JsonData, JsonValue, JsonValueType, TextField,
 };
 
 const COLOR_ACCENT: Color = Color::LightYellow;
@@ -182,16 +182,13 @@ fn render_editing_popup(frame: &mut Frame, app: &App) -> Result<(), io::Error> {
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(popup_vertical_panels[0]);
 
-    let mut key_block = Block::default().title("Key").borders(Borders::ALL);
-    let mut value_block = Block::default().title("Value").borders(Borders::ALL);
-    let mut type_block = Block::default().title("Type").borders(Borders::ALL);
-
-    let active_style = Style::default().bg(COLOR_ACCENT).fg(Color::Black);
-
+    let mut key_style = Style::default();
+    let mut value_style = Style::default();
+    let mut type_style = Style::default();
     match app.edit_popup_focus {
-        Some(EditFocus::Key) => key_block = key_block.style(active_style),
-        Some(EditFocus::Value) => value_block = value_block.style(active_style),
-        Some(EditFocus::Type) => type_block = type_block.style(active_style),
+        Some(EditFocus::Key) => key_style = key_style.bg(COLOR_ACCENT).fg(Color::Black),
+        Some(EditFocus::Value) => value_style = value_style.bg(COLOR_ACCENT).fg(Color::Black),
+        Some(EditFocus::Type) => type_style = type_style.bg(COLOR_ACCENT).fg(Color::Black),
         None => {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -199,6 +196,27 @@ fn render_editing_popup(frame: &mut Frame, app: &App) -> Result<(), io::Error> {
             ));
         }
     }
+
+    for field in app.error_fields.iter() {
+        match field {
+            TextField::Key => key_style = key_style.fg(Color::Red),
+            TextField::Value => value_style = value_style.fg(Color::Red),
+            _ => {}
+        }
+    }
+
+    let key_block = Block::default()
+        .title("Key")
+        .borders(Borders::ALL)
+        .style(key_style);
+    let value_block = Block::default()
+        .title("Value")
+        .borders(Borders::ALL)
+        .style(value_style);
+    let type_block = Block::default()
+        .title("Type")
+        .borders(Borders::ALL)
+        .style(type_style);
 
     frame.render_widget(popup_block, area);
 
@@ -297,22 +315,43 @@ fn render_exit_popup(frame: &mut Frame, app: &App) {
 
     let exit_text = Text::styled(
         " Would you like to save your changes before exiting?",
-        Style::default().fg(Color::Red),
+        Style::default(),
     );
-
-    let mut input_block = Block::default().title("Save To").borders(Borders::ALL);
 
     let mut positive_button = Block::default();
     let mut negative_button = Block::default();
 
     let active_style = Style::default().bg(COLOR_ACCENT).fg(Color::Black);
 
+    let mut input_style = Style::default();
+
     match app.exit_popup_focus {
-        Some(ExitFocus::Input) => input_block = input_block.style(active_style),
-        Some(ExitFocus::Positive) => positive_button = positive_button.style(active_style),
-        Some(ExitFocus::Negative) => negative_button = negative_button.style(active_style),
+        Some(ExitFocus::Input) => {
+            input_style = input_style.bg(COLOR_ACCENT).fg(Color::Black);
+        }
+        Some(ExitFocus::Positive) => {
+            positive_button = positive_button.style(active_style);
+        }
+        Some(ExitFocus::Negative) => {
+            negative_button = negative_button.style(active_style);
+        }
         None => {}
     };
+
+    for error_field in app.error_fields.iter() {
+        match error_field {
+            TextField::OutputFile => {
+                input_style = input_style.fg(Color::Red);
+                break;
+            }
+            _ => {}
+        }
+    }
+
+    let input_block = Block::default()
+        .title("Save To")
+        .borders(Borders::ALL)
+        .style(input_style);
 
     let middle_row_panels = Layout::default()
         .direction(Direction::Horizontal)

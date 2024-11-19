@@ -219,6 +219,7 @@ fn handle_input(app: &mut App, key_event: KeyEvent) -> Result<Option<bool>, AppE
                         let value_types = App::all_value_types();
                         let corresponding_json_type = value_types.get(selected_index).unwrap();
                         app.select_value_type(*corresponding_json_type);
+                        app.error_fields.clear();
                     }
                 } else {
                     match app.edit_popup_focus {
@@ -226,9 +227,11 @@ fn handle_input(app: &mut App, key_event: KeyEvent) -> Result<Option<bool>, AppE
                             app.edit_popup_focus = Some(EditFocus::Value);
                         }
                         Some(EditFocus::Value) => {
-                            app.save_key_value();
-                            app.clear_editing_state();
-                            app.goto_screen(AppScreen::Main);
+                            if app.validate_fields() {
+                                app.save_key_value();
+                                app.clear_editing_state();
+                                app.goto_screen(AppScreen::Main);
+                            }
                         }
                         Some(EditFocus::Type) => {
                             app.type_list_open = true;
@@ -326,7 +329,9 @@ fn handle_input(app: &mut App, key_event: KeyEvent) -> Result<Option<bool>, AppE
                     return Ok(Some(false));
                 }
                 _ => {
-                    return Ok(Some(true));
+                    if app.validate_fields() {
+                        return Ok(Some(true));
+                    }
                 }
             },
             InputAction::CursorUp => {
