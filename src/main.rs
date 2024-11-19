@@ -228,7 +228,7 @@ fn handle_input(app: &mut App, key_event: KeyEvent) -> Result<Option<bool>, AppE
                         }
                         Some(EditFocus::Value) => {
                             if app.validate_fields() {
-                                app.save_key_value();
+                                app.save_editing();
                                 app.clear_editing_state();
                                 app.goto_screen(AppScreen::Main);
                             }

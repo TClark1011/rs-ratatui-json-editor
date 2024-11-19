@@ -9,9 +9,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{
-    App, AppScreen, Binding, EditFocus, ExitFocus, JsonData, JsonValue, JsonValueType, TextField,
-};
+use crate::app::{App, AppScreen, Binding, EditFocus, ExitFocus, JsonData, TextField};
 
 const COLOR_ACCENT: Color = Color::LightYellow;
 const COLOR_SURFACE: Color = Color::DarkGray;
@@ -111,13 +109,8 @@ fn compose_pairs_list(pairs: &JsonData) -> List {
                 "\"{: <25}: {}",
                 format!("{key}\""),
                 match pairs.get(key) {
-                    Some(value) => match value {
-                        JsonValue::String(s) => format!("\"{}\"", s),
-                        JsonValue::Boolean(b) => format!("{}", b),
-                        JsonValue::Number(n) => format!("{}", n),
-                        JsonValue::Null => "null".to_string(),
-                    },
-                    None => "null".to_string(),
+                    Some(value) => value.get_formatted(),
+                    None => "[{!ERROR KEY NOT FOUND!]}".to_string(),
                 }
             ),
             Style::default().fg(COLOR_ACCENT),
@@ -226,13 +219,7 @@ fn render_editing_popup(frame: &mut Frame, app: &App) -> Result<(), io::Error> {
     let value_text = Paragraph::new(app.value_input.clone()).block(value_block);
     frame.render_widget(value_text, popup_panels[1]);
 
-    let type_text = Paragraph::new(match app.selected_value_type {
-        JsonValueType::String => "String",
-        JsonValueType::Boolean => "Boolean",
-        JsonValueType::Number => "Number",
-        JsonValueType::Null => "null",
-    })
-    .block(type_block);
+    let type_text = Paragraph::new(app.selected_value_type.to_string()).block(type_block);
     frame.render_widget(type_text, popup_vertical_panels[1]);
 
     return Ok(());

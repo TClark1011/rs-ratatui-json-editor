@@ -6,6 +6,8 @@ use std::{
     fs::File,
 };
 
+use serde::ser::{SerializeMap, SerializeSeq};
+
 use indexmap::IndexMap;
 use ratatui::{crossterm::event::KeyCode, widgets::ListState};
 
@@ -31,7 +33,9 @@ impl App {
         vec![
             JsonValueType::String,
             JsonValueType::Number,
-            JsonValueType::Boolean,
+            JsonValueType::Bool,
+            JsonValueType::Object,
+            JsonValueType::Array,
             JsonValueType::Null,
         ]
     }
@@ -182,7 +186,7 @@ impl App {
                             InputAction::EnterFieldText(TextField::Value),
                         ));
 
-                        if let JsonValueType::Boolean = self.selected_value_type {
+                        if let JsonValueType::Bool = self.selected_value_type {
                             result.push((
                                 Binding::Static(KeyCode::Char('t')),
                                 InputAction::EditingBoolToggle,
@@ -246,9 +250,9 @@ impl App {
             AppScreen::Editing => {
                 let value_field_is_valid = match self.selected_value_type {
                     JsonValueType::Number => self.value_input.parse::<f64>().is_ok(),
-                    JsonValueType::Boolean => self.value_input.parse::<bool>().is_ok(),
-                    JsonValueType::Null => self.value_input == "null",
+                    JsonValueType::Bool => self.value_input.parse::<bool>().is_ok(),
                     JsonValueType::String => true,
+                    other => self.value_input == other.get_initial_input_value(),
                 };
                 if !value_field_is_valid {
                     result.push(TextField::Value);
@@ -274,33 +278,20 @@ impl App {
     }
 
     pub fn select_value_type(&mut self, new_type: JsonValueType) {
-        match new_type {
-            JsonValueType::Boolean => {
-                self.value_input = "false".to_string();
-            }
-            JsonValueType::Null => {
-                self.value_input = "null".to_string();
-            }
-            JsonValueType::String => {
-                self.value_input = "".to_string();
-            }
-            JsonValueType::Number => {
-                self.value_input = "".to_string();
-            }
-        }
         self.selected_value_type = new_type;
+        self.value_input = new_type.get_initial_input_value().to_string();
     }
 
-    pub fn save_key_value(&mut self) {
+    pub fn save_editing(&mut self) {
         self.pairs.insert(
             self.key_input.clone(),
             match self.selected_value_type {
                 JsonValueType::Number => JsonValue::Number(self.value_input.parse().unwrap_or(0.0)),
-                JsonValueType::Boolean => {
-                    JsonValue::Boolean(self.value_input.parse().unwrap_or(false))
-                }
+                JsonValueType::Bool => JsonValue::Bool(self.value_input.parse().unwrap_or(false)),
                 JsonValueType::String => JsonValue::String(self.value_input.clone()),
                 JsonValueType::Null => JsonValue::Null,
+                JsonValueType::Object => JsonValue::Object(IndexMap::new()),
+                JsonValueType::Array => JsonValue::Array(Vec::new()),
             },
         );
     }
@@ -319,9 +310,15 @@ impl App {
                 self.key_input = key.clone();
                 self.value_input = match json_value {
                     JsonValue::String(value) => value.clone(),
-                    JsonValue::Null => "null".to_string(),
-                    JsonValue::Boolean(value) => value.to_string(),
+                    JsonValue::Bool(value) => value.to_string(),
                     JsonValue::Number(value) => value.to_string(),
+                    JsonValue::Null => JsonValueType::Null.get_initial_input_value().to_string(),
+                    JsonValue::Object(_) => {
+                        JsonValueType::Object.get_initial_input_value().to_string()
+                    }
+                    JsonValue::Array(_) => {
+                        JsonValueType::Array.get_initial_input_value().to_string()
+                    }
                 };
                 self.goto_screen(AppScreen::Editing);
                 self.edit_popup_focus = Some(EditFocus::Value);
@@ -470,8 +467,23 @@ impl Display for OpenItemEditError {
 pub enum JsonValueType {
     Number,
     String,
-    Boolean,
+    Bool,
     Null,
+    Object,
+    Array,
+}
+
+impl JsonValueType {
+    pub fn get_initial_input_value(&self) -> &str {
+        match self {
+            JsonValueType::Array => "[]",
+            JsonValueType::Object => "{}",
+            JsonValueType::Bool => "false",
+            JsonValueType::Null => "null",
+            JsonValueType::Number => "",
+            JsonValueType::String => "",
+        }
+    }
 }
 
 impl Display for JsonValueType {
@@ -479,8 +491,10 @@ impl Display for JsonValueType {
         match self {
             JsonValueType::Number => write!(f, "Number"),
             JsonValueType::String => write!(f, "String"),
-            JsonValueType::Boolean => write!(f, "Boolean"),
+            JsonValueType::Bool => write!(f, "Boolean"),
             JsonValueType::Null => write!(f, "null"),
+            JsonValueType::Object => write!(f, "Object"),
+            JsonValueType::Array => write!(f, "Array"),
         }
     }
 }
@@ -489,8 +503,10 @@ impl Display for JsonValueType {
 pub enum JsonValue {
     Number(f64),
     String(String),
-    Boolean(bool),
+    Bool(bool),
     Null,
+    Object(IndexMap<String, JsonValue>),
+    Array(Vec<JsonValue>),
 }
 
 impl JsonValue {
@@ -498,9 +514,20 @@ impl JsonValue {
         match serde_value {
             serde_json::Value::Number(n) => Ok(JsonValue::Number(n.as_f64().unwrap_or(0.0))),
             serde_json::Value::String(s) => Ok(JsonValue::String(s)),
-            serde_json::Value::Bool(b) => Ok(JsonValue::Boolean(b)),
+            serde_json::Value::Bool(b) => Ok(JsonValue::Bool(b)),
             serde_json::Value::Null => Ok(JsonValue::Null),
             _ => Err(JsonValueFromSerdeError::UnsupportedType),
+        }
+    }
+
+    pub fn get_formatted(&self) -> String {
+        match self {
+            JsonValue::Number(n) => n.to_string(),
+            JsonValue::String(s) => s.clone(),
+            JsonValue::Bool(b) => b.to_string(),
+            JsonValue::Null => JsonValueType::Null.get_initial_input_value().to_string(),
+            JsonValue::Object(o) => format!("{{{}}}", if o.is_empty() { " " } else { "..." }),
+            JsonValue::Array(a) => format!("[{}]", if a.is_empty() { " " } else { "..." }),
         }
     }
 }
@@ -524,8 +551,22 @@ impl serde::Serialize for JsonValue {
                 }
             }
             JsonValue::String(s) => serializer.serialize_str(s),
-            JsonValue::Boolean(b) => serializer.serialize_bool(*b),
+            JsonValue::Bool(b) => serializer.serialize_bool(*b),
             JsonValue::Null => serializer.serialize_none(),
+            JsonValue::Object(o) => {
+                let mut map = serializer.serialize_map(Some(o.len()))?;
+                for (k, v) in o {
+                    map.serialize_entry(k, v)?;
+                }
+                map.end()
+            }
+            JsonValue::Array(a) => {
+                let mut seq = serializer.serialize_seq(Some(a.len()))?;
+                for e in a {
+                    seq.serialize_element(e)?;
+                }
+                seq.end()
+            }
         }
     }
 }
