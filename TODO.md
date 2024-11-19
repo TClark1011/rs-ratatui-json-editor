@@ -17,4 +17,7 @@
 - [ ] Complex value types
   - [ ] objects
   - [ ] arrays
+- [ ] alternate top-level value
+  - [ ] primitive
+  - [ ] array
 - [ ] Allow cursor in preview
