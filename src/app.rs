@@ -25,6 +25,7 @@ pub struct App {
     pub target_delete_key: Option<String>,
     pub target_write_file: Option<String>,
     pub error_fields: Vec<TextField>,
+    traversal_path: Vec<TraversalKey>,
     current_screen: AppScreen,
 }
 
@@ -95,8 +96,9 @@ impl App {
                     target_delete_key: None,
                     target_write_file: input_file_path,
                     error_fields: Vec::new(),
+                    traversal_path: Vec::new(),
                 };
-                result.update_state();
+                result.update_state()?;
 
                 Ok(result)
             }
@@ -108,6 +110,12 @@ impl App {
     }
 
     pub fn goto_screen(&mut self, new_screen: AppScreen) {
+        match self.current_screen {
+            AppScreen::Editing => {
+                self.clear_editing_state();
+            }
+            _ => {}
+        }
         match new_screen {
             AppScreen::Editing => {
                 self.edit_popup_focus = Some(EditFocus::Key);
@@ -120,7 +128,9 @@ impl App {
         self.current_screen = new_screen;
     }
 
-    pub fn update_state(&mut self) {
+    /// Keep the app state in sync with the current screen
+    /// eg; applying the correct keybindings
+    pub fn update_state(&mut self) -> Result<(), AppError> {
         self.available_bindings = match self.current_screen {
             AppScreen::Main => {
                 let delete_modal_is_open = self.target_delete_key.is_some();
@@ -139,17 +149,47 @@ impl App {
                         (Binding::Static(KeyCode::Char('p')), InputAction::Preview),
                     ];
 
-                    if !self.pairs.is_empty() && !delete_modal_is_open {
-                        result.push((Binding::Static(KeyCode::Enter), InputAction::CursorSelect));
+                    if !self.get_visible_pairs()?.is_empty() {
                         result.push((Binding::Static(KeyCode::Down), InputAction::CursorDown));
                         result.push((Binding::Static(KeyCode::Up), InputAction::CursorUp));
+                    }
+                    match self.list_ui_state.selected() {
+                        Some(selected_index) => {
+                            match self.get_visible_pairs()?.get_index(selected_index) {
+                                Some((_, value)) => match value.clone() {
+                                    JsonValue::Object(_) | JsonValue::Array(_) => {
+                                        result.push((
+                                            Binding::Static(KeyCode::Right),
+                                            InputAction::CursorTraverse,
+                                        ));
+                                    }
+                                    _ => {}
+                                },
+                                None => {}
+                            };
 
-                        if self.list_ui_state.selected().is_some() {
+                            result
+                                .push((Binding::Static(KeyCode::Enter), InputAction::CursorSelect));
                             result.push((Binding::Static(KeyCode::Esc), InputAction::CursorCancel));
                             result.push((
                                 Binding::Static(KeyCode::Backspace),
                                 InputAction::RequestPairDelete,
                             ));
+                        }
+                        None => {}
+                    }
+
+                    if !self.traversal_path.is_empty() {
+                        let item: ActionBinding =
+                            (Binding::Static(KeyCode::Left), InputAction::CursorReturn);
+                        match result
+                            .iter()
+                            .position(|(_, action)| action == &InputAction::CursorUp)
+                        {
+                            Some(idx) => {
+                                result.insert(idx + 1, item);
+                            }
+                            None => result.push(item),
                         }
                     }
 
@@ -239,6 +279,8 @@ impl App {
             }
             AppScreen::Preview => vec![(Binding::Static(KeyCode::Esc), InputAction::ExitPreview)],
         };
+
+        Ok(())
     }
 
     pub fn validate_fields(&mut self) -> bool {
@@ -283,23 +325,45 @@ impl App {
     }
 
     pub fn save_editing(&mut self) {
-        self.pairs.insert(
-            self.key_input.clone(),
-            match self.selected_value_type {
-                JsonValueType::Number => JsonValue::Number(self.value_input.parse().unwrap_or(0.0)),
-                JsonValueType::Bool => JsonValue::Bool(self.value_input.parse().unwrap_or(false)),
-                JsonValueType::String => JsonValue::String(self.value_input.clone()),
-                JsonValueType::Null => JsonValue::Null,
-                JsonValueType::Object => JsonValue::Object(IndexMap::new()),
-                JsonValueType::Array => JsonValue::Array(Vec::new()),
-            },
-        );
+        let new_value: JsonValue = match self.selected_value_type {
+            JsonValueType::Number => JsonValue::Number(self.value_input.parse().unwrap_or(0.0)),
+            JsonValueType::Bool => JsonValue::Bool(self.value_input.parse().unwrap_or(false)),
+            JsonValueType::String => JsonValue::String(self.value_input.clone()),
+            JsonValueType::Null => JsonValue::Null,
+            JsonValueType::Object => JsonValue::Object(IndexMap::new()),
+            JsonValueType::Array => JsonValue::Array(Vec::new()),
+        };
+
+        fn traverse_and_update(
+            current: &mut JsonData,
+            path: &mut dyn Iterator<Item = &TraversalKey>,
+            key_input: &str,
+            new_value: JsonValue,
+        ) {
+            if let Some(key) = path.next() {
+                match key {
+                    TraversalKey::String(s) => {
+                        if let Some(JsonValue::Object(o)) = current.get_mut(s) {
+                            traverse_and_update(o, path, key_input, new_value);
+                        }
+                    }
+                    _ => {}
+                }
+            } else {
+                current.insert(key_input.to_string(), new_value);
+            }
+        }
+
+        let mut path_iter = self.traversal_path.iter();
+        traverse_and_update(&mut self.pairs, &mut path_iter, &self.key_input, new_value);
     }
 
     pub fn clear_editing_state(&mut self) {
         self.key_input.clear();
         self.value_input.clear();
         self.edit_popup_focus = None;
+        self.select_value_type(JsonValueType::String);
+        self.type_list_ui_state.select(None);
     }
 
     pub fn open_item_edit(&mut self, index: usize) -> Result<(), OpenItemEditError> {
@@ -328,6 +392,66 @@ impl App {
         }
     }
 
+    pub fn get_visible_pairs(&self) -> Result<JsonData, AppError> {
+        let mut result = self.pairs.clone();
+
+        for (idx, key) in self.traversal_path.iter().enumerate() {
+            match key {
+                TraversalKey::String(s) => match result.get(s.as_str()) {
+                    Some(JsonValue::Object(o)) => {
+                        result = o.clone();
+                    }
+                    _ => {
+                        return Err(AppError::InvalidTraversalPath(key.clone(), idx));
+                    }
+                },
+                TraversalKey::Index(i) => {
+                    if let Some(JsonValue::Array(a)) = result.get(i.to_string().as_str()) {
+                        let mut new_result = JsonData::new();
+                        for (idx, value) in a.iter().enumerate() {
+                            new_result.insert(idx.to_string(), value.clone());
+                        }
+                        result = new_result;
+                    }
+                }
+            }
+        }
+
+        Ok(result)
+    }
+
+    pub fn get_traversal_path(&self) -> &Vec<TraversalKey> {
+        &self.traversal_path
+    }
+
+    pub fn traverse_down(&mut self, target: TraversalKey) {
+        self.traversal_path.push(target);
+        self.list_ui_state.select(Some(0));
+    }
+
+    pub fn traverse_up(&mut self) -> Result<(), AppError> {
+        if !self.traversal_path.is_empty() {
+            let last_key = self.traversal_path.pop();
+            let new_pairs = self.get_visible_pairs()?;
+
+            match last_key {
+                None => {
+                    self.list_ui_state.select(None);
+                }
+                Some(key) => match new_pairs.get_index_of(key.to_string().as_str()) {
+                    Some(idx) => {
+                        self.list_ui_state.select(Some(idx));
+                    }
+                    None => {
+                        self.list_ui_state.select(None);
+                    }
+                },
+            }
+        }
+
+        return Ok(());
+    }
+
     pub fn serialize(&self) -> serde_json::Result<String> {
         serde_json::to_string(&self.pairs)
     }
@@ -352,6 +476,7 @@ impl App {
     }
 }
 
+#[derive(Debug)]
 pub enum AppScreen {
     Main,
     Editing,
@@ -359,27 +484,28 @@ pub enum AppScreen {
     Preview,
 }
 
+#[derive(Debug)]
 pub enum EditFocus {
     Key,
     Value,
     Type,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum ExitFocus {
     Input,
     Positive,
     Negative,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TextField {
     Key,
     Value,
     OutputFile,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum InputAction {
     Quit,
     ExitCancel,
@@ -401,6 +527,8 @@ pub enum InputAction {
     CursorDown,
     CursorCancel,
     CursorSelect,
+    CursorTraverse,
+    CursorReturn,
     RequestPairDelete,
     DeleteYes,
     DeleteNo,
@@ -408,21 +536,6 @@ pub enum InputAction {
     Preview,
     EnterFieldText(TextField),
     BackspaceFieldText(TextField),
-}
-
-#[derive(Clone, Copy)]
-pub enum Binding {
-    Static(KeyCode),
-    TextEntry,
-}
-
-impl Display for Binding {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        match self {
-            Binding::Static(key_code) => write!(f, "{key_code}"),
-            Binding::TextEntry => write!(f, "Text Entry"),
-        }
-    }
 }
 
 impl InputAction {
@@ -437,6 +550,8 @@ impl InputAction {
             InputAction::CursorDown => Some("down"),
             InputAction::CursorUp => Some("up"),
             InputAction::CursorCancel => Some("cancel"),
+            InputAction::CursorTraverse => Some("open"),
+            InputAction::CursorReturn => Some("back"),
             InputAction::EditingBoolToggle => Some("toggle"),
             InputAction::RequestPairDelete => Some("delete"),
             InputAction::DeleteYes => Some("yes"),
@@ -444,6 +559,26 @@ impl InputAction {
             InputAction::ExitPreview => Some("exit"),
             InputAction::Preview => Some("preview"),
             _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Binding {
+    Static(KeyCode),
+    TextEntry,
+}
+
+impl Display for Binding {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            Binding::Static(KeyCode::Char(' ')) => write!(f, "Space"),
+            Binding::Static(KeyCode::Left) => write!(f, "←"),
+            Binding::Static(KeyCode::Right) => write!(f, "→"),
+            Binding::Static(KeyCode::Up) => write!(f, "↑"),
+            Binding::Static(KeyCode::Down) => write!(f, "↓"),
+            Binding::Static(key_code) => write!(f, "{key_code}"),
+            Binding::TextEntry => write!(f, "Text Entry"),
         }
     }
 }
@@ -463,12 +598,12 @@ impl Display for OpenItemEditError {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum JsonValueType {
+    Null,
     Number,
     String,
     Bool,
-    Null,
     Object,
     Array,
 }
@@ -499,12 +634,36 @@ impl Display for JsonValueType {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
+pub enum TraversalKey {
+    String(String),
+    Index(usize),
+}
+
+impl Display for TraversalKey {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            TraversalKey::String(s) => write!(f, "{s}"),
+            TraversalKey::Index(i) => write!(f, "{i}"),
+        }
+    }
+}
+
+impl TraversalKey {
+    pub fn format(&self) -> String {
+        match self {
+            TraversalKey::String(s) => format!("\"{s}\""),
+            TraversalKey::Index(i) => i.to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum JsonValue {
+    Null,
     Number(f64),
     String(String),
     Bool(bool),
-    Null,
     Object(IndexMap<String, JsonValue>),
     Array(Vec<JsonValue>),
 }
@@ -516,14 +675,27 @@ impl JsonValue {
             serde_json::Value::String(s) => Ok(JsonValue::String(s)),
             serde_json::Value::Bool(b) => Ok(JsonValue::Bool(b)),
             serde_json::Value::Null => Ok(JsonValue::Null),
-            _ => Err(JsonValueFromSerdeError::UnsupportedType),
+            serde_json::Value::Object(o) => {
+                let mut result = IndexMap::new();
+                for (k, v) in o {
+                    result.insert(k, JsonValue::from_serde(v)?);
+                }
+                Ok(JsonValue::Object(result))
+            }
+            serde_json::Value::Array(a) => {
+                let mut result = Vec::new();
+                for v in a {
+                    result.push(JsonValue::from_serde(v)?);
+                }
+                Ok(JsonValue::Array(result))
+            }
         }
     }
 
     pub fn get_formatted(&self) -> String {
         match self {
             JsonValue::Number(n) => n.to_string(),
-            JsonValue::String(s) => s.clone(),
+            JsonValue::String(s) => format!("\"{s}\""),
             JsonValue::Bool(b) => b.to_string(),
             JsonValue::Null => JsonValueType::Null.get_initial_input_value().to_string(),
             JsonValue::Object(o) => format!("{{{}}}", if o.is_empty() { " " } else { "..." }),
@@ -582,6 +754,7 @@ pub enum AppError {
     UnableToSave(AppWriteError),
     FailedToDraw(io::Error),
     FailedToReadEvent(io::Error),
+    InvalidTraversalPath(TraversalKey, usize), // bad key, index of bad key
 }
 
 impl Display for AppError {
@@ -596,6 +769,9 @@ impl Display for AppError {
                 write!(f, "An error occurred while reading input: {e}")
             }
             AppError::NoEntryAtIndex(usize) => write!(f, "No entry exists at index {usize}"),
+            AppError::InvalidTraversalPath(key, idx) => {
+                write!(f, "Invalid traversal path at {idx}: {key}")
+            }
         }
     }
 }

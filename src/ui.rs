@@ -30,7 +30,10 @@ pub fn ui(frame: &mut Frame, app: &mut App) -> Result<(), io::Error> {
     let footer = compose_footer(app);
     frame.render_widget(footer, vertical_panels[2]);
 
-    let pairs_list = compose_pairs_list(&app.pairs);
+    let visible_pairs = &app
+        .get_visible_pairs()
+        .map_err(|_| io::Error::other("todo!"))?;
+    let pairs_list = compose_pairs_list(visible_pairs);
     frame.render_stateful_widget(pairs_list, vertical_panels[1], &mut app.list_ui_state);
 
     if let Some(target_delete_key) = &app.target_delete_key {
@@ -67,10 +70,26 @@ fn compose_header(app: &App) -> Paragraph {
         .borders(Borders::ALL)
         .style(Style::default());
 
+    let main_screen_title = format!(
+        "JSON Editor {}",
+        if app.get_traversal_path().is_empty() {
+            "".to_string()
+        } else {
+            format!(
+                "| {}",
+                app.get_traversal_path()
+                    .iter()
+                    .map(|key| key.format())
+                    .collect::<Vec<_>>()
+                    .join(" > ")
+            )
+        }
+    );
+
     Paragraph::new(Text::styled(
         match app.get_current_screen() {
-            AppScreen::Preview => "Preview",
-            _ => "JSON Editor",
+            AppScreen::Preview => "Preview".to_string(),
+            _ => main_screen_title,
         },
         Style::default().fg(Color::Green),
     ))

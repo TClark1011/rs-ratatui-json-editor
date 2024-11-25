@@ -74,7 +74,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<bool, AppError> {
     loop {
-        app.update_state();
+        app.update_state()?;
         terminal
             .try_draw(|frame| ui(frame, app))
             .map_err(AppError::FailedToDraw)?;
@@ -96,7 +96,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<bool
 /// Interpreting `Ok` return values
 /// - `None` - continue running the app
 /// - `Some(bool)` - Exit the app, the bool value
-/// indicates whether changes should be saved
+///   indicates whether changes should be saved
 fn handle_input(app: &mut App, key_event: KeyEvent) -> Result<Option<bool>, AppError> {
     if key_event.kind == event::KeyEventKind::Release {
         // we only want to listen to `Press` events
@@ -176,12 +176,6 @@ fn handle_input(app: &mut App, key_event: KeyEvent) -> Result<Option<bool>, AppE
                     }
                 }
             },
-            // InputAction::ExitYesSave => {
-            //     return Ok(Some(true));
-            // }
-            // InputAction::ExitNoSave => {
-            //     return Ok(Some(false));
-            // }
             InputAction::ExitCancel => {
                 app.goto_screen(AppScreen::Main);
             }
@@ -195,7 +189,6 @@ fn handle_input(app: &mut App, key_event: KeyEvent) -> Result<Option<bool>, AppE
                 if app.type_list_open {
                     app.type_list_open = false;
                 } else {
-                    app.clear_editing_state();
                     app.goto_screen(AppScreen::Main);
                 }
             }
@@ -337,9 +330,16 @@ fn handle_input(app: &mut App, key_event: KeyEvent) -> Result<Option<bool>, AppE
             InputAction::CursorUp => {
                 app.list_ui_state.select_previous();
             }
-            InputAction::CursorDown => {
-                app.list_ui_state.select_next();
-            }
+            InputAction::CursorDown => match app.list_ui_state.selected() {
+                Some(selected_index) => {
+                    if selected_index != app.get_visible_pairs()?.len() - 1 {
+                        app.list_ui_state.select_next();
+                    }
+                }
+                None => {
+                    app.list_ui_state.select_first();
+                }
+            },
             InputAction::CursorCancel => {
                 app.list_ui_state.select(None);
             }
@@ -348,6 +348,19 @@ fn handle_input(app: &mut App, key_event: KeyEvent) -> Result<Option<bool>, AppE
                     app.open_item_edit(selected_index)
                         .map_err(AppError::FailedToOpenPairEdit)?;
                 }
+            }
+            InputAction::CursorTraverse => {
+                if let Some(selected_index) = app.list_ui_state.selected() {
+                    match app.get_visible_pairs()?.get_index(selected_index) {
+                        Some((key, _)) => {
+                            app.traverse_down(app::TraversalKey::String(key.clone()));
+                        }
+                        None => {}
+                    }
+                }
+            }
+            InputAction::CursorReturn => {
+                app.traverse_up()?;
             }
             InputAction::RequestPairDelete => {
                 if let Some(selected_index) = app.list_ui_state.selected() {
