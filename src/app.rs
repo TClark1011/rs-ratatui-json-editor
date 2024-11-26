@@ -324,6 +324,40 @@ impl App {
         self.value_input = new_type.get_initial_input_value().to_string();
     }
 
+    pub fn deep_delete(&mut self, path: Vec<TraversalKey>) -> Result<(), AppError> {
+        fn traverse_and_delete(
+            current: &mut JsonData,
+            path: &mut dyn Iterator<Item = &TraversalKey>,
+            last_key: Option<TraversalKey>,
+        ) -> Result<(), AppError> {
+            if let Some(key) = path.next() {
+                match key {
+                    TraversalKey::String(s) => {
+                        if let Some(JsonValue::Object(o)) = current.get_mut(s) {
+                            traverse_and_delete(o, path, Some(key.clone()))
+                        } else {
+                            traverse_and_delete(current, path, Some(key.clone()))
+                        }
+                    }
+                    TraversalKey::Index(_) => {
+                        todo!("Support arrays")
+                    }
+                }
+            } else {
+                match last_key {
+                    Some(key) => {
+                        current.shift_remove(&key.to_string());
+                        Ok(())
+                    }
+                    _ => Err(AppError::Other("last key was not provided".to_string())),
+                }
+            }
+        }
+
+        let mut path_iter = path.iter();
+        traverse_and_delete(&mut self.pairs, &mut path_iter, None)
+    }
+
     pub fn save_editing(&mut self) {
         let new_value: JsonValue = match self.selected_value_type {
             JsonValueType::Number => JsonValue::Number(self.value_input.parse().unwrap_or(0.0)),
@@ -392,12 +426,11 @@ impl App {
         }
     }
 
-    pub fn get_visible_pairs(&self) -> Result<JsonData, AppError> {
+    pub fn get_visible_pairs(&mut self) -> Result<JsonData, AppError> {
         let mut result = self.pairs.clone();
-
         for (idx, key) in self.traversal_path.iter().enumerate() {
             match key {
-                TraversalKey::String(s) => match result.get(s.as_str()) {
+                TraversalKey::String(s) => match result.get_mut(s.as_str()) {
                     Some(JsonValue::Object(o)) => {
                         result = o.clone();
                     }
@@ -411,7 +444,7 @@ impl App {
                         for (idx, value) in a.iter().enumerate() {
                             new_result.insert(idx.to_string(), value.clone());
                         }
-                        result = new_result;
+                        result = new_result.clone();
                     }
                 }
             }
@@ -419,6 +452,26 @@ impl App {
 
         Ok(result)
     }
+    // pub fn get_visible_pairs_mut(&mut self) -> Result<&mut JsonData, AppError> {
+    //     self.traversal_path.iter().enumerate().fold(
+    //         Ok(&mut self.pairs),
+    //         |acc, (idx, key)| match acc {
+    //             Ok(data) => match key {
+    //                 TraversalKey::String(s) => {
+    //                     if let Some(JsonValue::Object(o)) = data.get_mut(s.as_str()) {
+    //                         Ok(o)
+    //                     } else {
+    //                         Err(AppError::InvalidTraversalPath(key.clone(), idx))
+    //                     }
+    //                 }
+    //                 TraversalKey::Index(_) => {
+    //                     todo!("Support arrays")
+    //                 }
+    //             },
+    //             other => other,
+    //         },
+    //     )
+    // }
 
     pub fn get_traversal_path(&self) -> &Vec<TraversalKey> {
         &self.traversal_path
@@ -747,6 +800,7 @@ pub type JsonData = IndexMap<String, JsonValue>;
 
 #[derive(Debug)]
 pub enum AppError {
+    Other(String),
     InputFileNotFound(String),
     InvalidInputJson,
     FailedToOpenPairEdit(OpenItemEditError),
@@ -760,6 +814,7 @@ pub enum AppError {
 impl Display for AppError {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
+            AppError::Other(s) => write!(f, "{s}"),
             AppError::InputFileNotFound(path) => write!(f, "No file found at path: {path}"),
             AppError::InvalidInputJson => write!(f, "Invalid input JSON"),
             AppError::FailedToOpenPairEdit(e) => write!(f, "Failed to open pair for editing: {e}"),

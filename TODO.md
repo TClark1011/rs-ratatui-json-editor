@@ -15,13 +15,15 @@
 - [x] value input validation
 - [x] JSON preview
 - [ ] Complex value types
-  - [ ] objects
+  - [x] objects
   - [ ] arrays
   - [ ] Correct error handling in `ui` function
   - [x] display traversal path
   - [x] after traversing up, item that was viewed should be selected
   - [x] creating new item in nested
   - [ ] deleting item in nested
+    - [x] object
+    - [ ] array
   - [x] read nested from file
   - [ ] re-order array items
 - [ ] alternate top-level value

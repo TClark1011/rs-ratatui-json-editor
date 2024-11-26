@@ -363,19 +363,21 @@ fn handle_input(app: &mut App, key_event: KeyEvent) -> Result<Option<bool>, AppE
                 app.traverse_up()?;
             }
             InputAction::RequestPairDelete => {
+                let pairs = app.get_visible_pairs()?.clone();
                 if let Some(selected_index) = app.list_ui_state.selected() {
-                    let entry = match app.pairs.get_index_entry(selected_index) {
-                        Some(entry) => entry,
-                        None => return Err(AppError::NoEntryAtIndex(selected_index)),
-                    };
-                    let key = entry.key();
+                    let (key, _) = pairs
+                        .get_index(selected_index)
+                        .ok_or(AppError::NoEntryAtIndex(selected_index))?;
 
                     app.target_delete_key = Some(key.into());
                 }
             }
             InputAction::DeleteYes => {
-                if let Some(target_key) = &app.target_delete_key {
-                    app.pairs.shift_remove(target_key.as_str());
+                let target_key_opt = app.target_delete_key.clone();
+                if let Some(target_key) = target_key_opt {
+                    let mut final_path = app.get_traversal_path().clone();
+                    final_path.push(app::TraversalKey::String(target_key));
+                    app.deep_delete(final_path)?;
                     app.target_delete_key = None;
                 }
             }
